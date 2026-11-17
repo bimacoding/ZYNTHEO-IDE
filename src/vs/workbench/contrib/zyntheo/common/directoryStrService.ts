@@ -5,12 +5,14 @@
 
 import { URI } from '../../../../base/common/uri.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IFileService, IFileStat } from '../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { ShallowDirectoryItem, BuiltinToolCallParams, BuiltinToolResultType } from './toolsServiceTypes.js';
 import { MAX_CHILDREN_URIs_PAGE, MAX_DIRSTR_CHARS_TOTAL_BEGINNING, MAX_DIRSTR_CHARS_TOTAL_TOOL } from './prompt/prompts.js';
+import { IZyntheoRustService } from './zyntheoRustService.js';
 
 
 const MAX_FILES_TOTAL = 1000;
@@ -387,11 +389,26 @@ class DirectoryStrService extends Disposable implements IDirectoryStrService {
 	constructor(
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 		@IFileService private readonly fileService: IFileService,
+		@IZyntheoRustService private readonly rustService: IZyntheoRustService,
 	) {
 		super();
 	}
 
 	async getAllURIsInDirectory(uri: URI, opts: { maxResults: number }): Promise<URI[]> {
+		// Optional Rust hot path for local folders when ZYNTHEO_RUST_SERVICES=1.
+		// Any failure / undefined → identical TypeScript fallback (never delete TS path).
+		if (uri.scheme === Schemas.file) {
+			try {
+				const rust = await this.rustService.listFiles(uri.fsPath, opts.maxResults);
+				if (rust?.entries?.length) {
+					return rust.entries
+						.slice(0, opts.maxResults)
+						.map(rel => URI.joinPath(uri, rel));
+				}
+			} catch {
+				// fall through to TypeScript
+			}
+		}
 		return getAllUrisInDirectory(uri, opts.maxResults, this.fileService)
 	}
 

@@ -7,6 +7,39 @@ use thiserror::Error;
 
 pub const PRODUCT_NAME: &str = "Zyntheo IDE";
 pub const SERVICE_NAME: &str = "zyntheo-sidecar";
+/// Wire protocol version negotiated on every request.
+pub const PROTOCOL_VERSION: u32 = 1;
+pub const SIDECAR_API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ErrorCode {
+    Cancelled,
+    LimitExceeded,
+    Protocol,
+    Io,
+    VersionMismatch,
+    NotFound,
+    Timeout,
+    Unavailable,
+    Internal,
+}
+
+impl ErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cancelled => "CANCELLED",
+            Self::LimitExceeded => "LIMIT_EXCEEDED",
+            Self::Protocol => "PROTOCOL",
+            Self::Io => "IO",
+            Self::VersionMismatch => "VERSION_MISMATCH",
+            Self::NotFound => "NOT_FOUND",
+            Self::Timeout => "TIMEOUT",
+            Self::Unavailable => "UNAVAILABLE",
+            Self::Internal => "INTERNAL",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLimits {
@@ -14,6 +47,8 @@ pub struct ResourceLimits {
     pub max_depth: usize,
     pub max_message_bytes: usize,
     pub max_file_bytes: usize,
+    pub max_concurrency: usize,
+    pub default_timeout_ms: u64,
 }
 
 impl Default for ResourceLimits {
@@ -23,6 +58,8 @@ impl Default for ResourceLimits {
             max_depth: 32,
             max_message_bytes: 8 * 1024 * 1024,
             max_file_bytes: 2 * 1024 * 1024,
+            max_concurrency: 2,
+            default_timeout_ms: 30_000,
         }
     }
 }
@@ -37,8 +74,43 @@ pub enum ZyntheoError {
     Io(#[from] std::io::Error),
     #[error("protocol: {0}")]
     Protocol(String),
+    #[error("version mismatch: {0}")]
+    VersionMismatch(String),
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("timeout")]
+    Timeout,
     #[error("other: {0}")]
     Other(String),
+}
+
+impl ZyntheoError {
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            Self::Cancelled => ErrorCode::Cancelled,
+            Self::LimitExceeded(_) => ErrorCode::LimitExceeded,
+            Self::Io(_) => ErrorCode::Io,
+            Self::Protocol(_) => ErrorCode::Protocol,
+            Self::VersionMismatch(_) => ErrorCode::VersionMismatch,
+            Self::NotFound(_) => ErrorCode::NotFound,
+            Self::Timeout => ErrorCode::Timeout,
+            Self::Other(_) => ErrorCode::Internal,
+        }
+    }
+
+    /// Public-facing message without dumping large path trees.
+    pub fn safe_message(&self) -> String {
+        match self {
+            Self::Cancelled => "cancelled".into(),
+            Self::LimitExceeded(m) => format!("limit exceeded: {m}"),
+            Self::Io(e) => format!("io: {e}"),
+            Self::Protocol(m) => format!("protocol: {m}"),
+            Self::VersionMismatch(m) => format!("version mismatch: {m}"),
+            Self::NotFound(_) => "path not found".into(),
+            Self::Timeout => "timeout".into(),
+            Self::Other(m) => m.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -66,6 +138,40 @@ impl CancelToken {
             Ok(())
         }
     }
+
+    pub fn reset(&self) {
+        self.inner.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Directory names excluded to mirror TypeScript `shouldExcludeDirectory` heuristics.
+pub fn should_exclude_dir_name(name: &str) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    matches!(
+        name,
+        ".git"
+            | "node_modules"
+            | "dist"
+            | "build"
+            | "out"
+            | "bin"
+            | "coverage"
+            | "__pycache__"
+            | "env"
+            | "venv"
+            | "tmp"
+            | "temp"
+            | "artifacts"
+            | "target"
+            | "obj"
+            | "vendor"
+            | "logs"
+            | "cache"
+            | "resource"
+            | "resources"
+    )
 }
 
 #[cfg(test)]
@@ -78,6 +184,8 @@ mod tests {
         assert!(t.check().is_ok());
         t.cancel();
         assert!(matches!(t.check(), Err(ZyntheoError::Cancelled)));
+        t.reset();
+        assert!(t.check().is_ok());
     }
 
     #[test]
@@ -85,5 +193,13 @@ mod tests {
         let l = ResourceLimits::default();
         assert!(l.max_files > 0);
         assert!(l.max_message_bytes > 0);
+        assert!(l.max_concurrency >= 1);
+    }
+
+    #[test]
+    fn exclude_helpers() {
+        assert!(should_exclude_dir_name("node_modules"));
+        assert!(should_exclude_dir_name(".hidden"));
+        assert!(!should_exclude_dir_name("src"));
     }
 }

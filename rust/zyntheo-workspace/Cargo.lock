@@ -307,6 +307,8 @@ dependencies = [
 name = "zyntheo-sidecar"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "zyntheo-core",
  "zyntheo-fs",
  "zyntheo-index",

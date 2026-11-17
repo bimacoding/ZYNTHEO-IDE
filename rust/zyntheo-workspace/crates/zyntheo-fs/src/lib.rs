@@ -1,8 +1,10 @@
 //! Bounded directory listing for AI context / directory strings.
 
 use ignore::WalkBuilder;
+use std::fs;
 use std::path::{Path, PathBuf};
-use zyntheo_core::{CancelToken, ResourceLimits, ZyntheoError};
+use std::time::SystemTime;
+use zyntheo_core::{should_exclude_dir_name, CancelToken, ResourceLimits, ZyntheoError};
 
 #[derive(Debug, Clone)]
 pub struct TreeResult {
@@ -11,6 +13,15 @@ pub struct TreeResult {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct FileMeta {
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub mtime_epoch_secs: u64,
+}
+
+/// Walk workspace tree with gitignore + TypeScript-aligned directory excludes.
 pub fn list_tree(
     root: &Path,
     limits: &ResourceLimits,
@@ -22,10 +33,7 @@ pub fn list_tree(
     let max_files = max_files.unwrap_or(limits.max_files);
 
     if !root.exists() {
-        return Err(ZyntheoError::Other(format!(
-            "root does not exist: {}",
-            root.display()
-        )));
+        return Err(ZyntheoError::NotFound(root.display().to_string()));
     }
 
     let mut entries = Vec::new();
@@ -36,6 +44,14 @@ pub fn list_tree(
         .hidden(false)
         .git_ignore(true)
         .git_global(true)
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            if entry.depth() > 0 && entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                !should_exclude_dir_name(&name)
+            } else {
+                true
+            }
+        })
         .build();
 
     for dent in walker {
@@ -66,29 +82,84 @@ pub fn list_tree(
     })
 }
 
+/// Collect relative file paths only (no directories), for URI-list style consumers.
+pub fn list_file_paths(
+    root: &Path,
+    limits: &ResourceLimits,
+    max_files: Option<usize>,
+    cancel: &CancelToken,
+) -> Result<TreeResult, ZyntheoError> {
+    let tree = list_tree(root, limits, None, max_files, cancel)?;
+    let files: Vec<String> = tree
+        .entries
+        .into_iter()
+        .filter(|e| !e.ends_with('/'))
+        .collect();
+    let truncated = tree.truncated || files.len() >= max_files.unwrap_or(limits.max_files);
+    Ok(TreeResult {
+        root: tree.root,
+        entries: files,
+        truncated,
+    })
+}
+
+pub fn file_metadata(path: &Path) -> Result<FileMeta, ZyntheoError> {
+    let meta = fs::metadata(path)?;
+    let mtime_epoch_secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(FileMeta {
+        path: path.to_string_lossy().replace('\\', "/"),
+        is_dir: meta.is_dir(),
+        size: meta.len(),
+        mtime_epoch_secs,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn lists_bounded_tree() {
+    fn temp_dir(tag: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("zyntheo-fs-test-{nanos}"));
+        std::env::temp_dir().join(format!("zyntheo-fs-{tag}-{nanos}"))
+    }
+
+    #[test]
+    fn lists_bounded_tree_and_skips_node_modules() {
+        let dir = temp_dir("tree");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("a/b")).unwrap();
+        fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
         fs::write(dir.join("a/b/c.txt"), b"hi").unwrap();
+        fs::write(dir.join("node_modules/pkg/x.js"), b"x").unwrap();
         let limits = ResourceLimits {
-            max_files: 10,
-            max_depth: 5,
+            max_files: 50,
+            max_depth: 8,
             ..ResourceLimits::default()
         };
         let res = list_tree(&dir, &limits, None, None, &CancelToken::new()).unwrap();
-        assert!(!res.entries.is_empty());
+        assert!(res.entries.iter().any(|e| e.contains("c.txt")));
+        assert!(!res.entries.iter().any(|e| e.contains("node_modules")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_file_paths_filters_dirs() {
+        let dir = temp_dir("files");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/main.rs"), b"fn main(){}").unwrap();
+        let res = list_file_paths(&dir, &ResourceLimits::default(), Some(100), &CancelToken::new()).unwrap();
+        assert!(res.entries.iter().all(|e| !e.ends_with('/')));
+        assert!(res.entries.iter().any(|e| e.ends_with("main.rs")));
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,31 +1,49 @@
 # Rust Architecture
 
-**Status:** IMPLEMENTED scaffold — integration feature-flagged
+**Status:** Hybrid Option E — protocol v1 + flagged integration  
+**Long-term goal:** Rust as primary performance engine; Electron/TS UI preserved.
 
 ## Workspace
 
 `rust/zyntheo-workspace/`
 
-| Crate | Role |
-|-------|------|
-| `zyntheo-core` | Limits, cancel token, errors, product constants |
-| `zyntheo-ipc` | 4-byte BE length-prefixed JSON |
-| `zyntheo-fs` | Bounded gitignore-aware tree walk |
-| `zyntheo-index` | Snapshot index scaffold |
-| `zyntheo-sidecar` | stdio binary |
+| Crate | Role | Maturity |
+|-------|------|----------|
+| `zyntheo-core` | Limits, cancel, error codes | TESTED |
+| `zyntheo-ipc` | Length-prefixed JSON envelopes v1 | TESTED |
+| `zyntheo-fs` | Bounded gitignore + exclude walk | TESTED |
+| `zyntheo-index` | In-memory index + mtime refresh | TESTED |
+| `zyntheo-sidecar` | stdio binary | IMPLEMENTED |
 
 ## Electron bridge
 
-`src/vs/workbench/contrib/zyntheo/electron-main/zyntheoRustSidecar.ts`
+| Piece | Path |
+|-------|------|
+| Process client | `electron-main/zyntheoRustSidecar.ts` |
+| Main service | `electron-main/zyntheoRustMainService.ts` |
+| Channel | `zyntheo-channel-rust` (registered in `app.ts`) |
+| Renderer proxy | `common/zyntheoRustService.ts` |
 
 - Disabled unless `ZYNTHEO_RUST_SERVICES=1`
-- Binary path: `ZYNTHEO_SIDECAR_PATH` or `rust/zyntheo-workspace/target/release/zyntheo-sidecar`
-- On failure → callers use TypeScript fallback
+- Binary: `ZYNTHEO_SIDECAR_PATH` or `rust/zyntheo-workspace/target/release/zyntheo-sidecar`
+- On failure → TypeScript fallback (see `docs/RUST-FALLBACK-STRATEGY.md`)
 
 ## Tests
 
 ```bash
-cd rust/zyntheo-workspace && cargo test --workspace
+cd rust/zyntheo-workspace
+unset CARGO_TARGET_DIR
+cargo test --workspace --target-dir ./target
+cargo build --release -p zyntheo-sidecar --target-dir ./target
+./scripts/rust-sidecar-bench.sh ./rust/zyntheo-workspace
 ```
 
-Result (2026-11-17): all crate unit tests passed.
+## Docs index
+
+- `RUST-SIDECAR-REVIEW.md`
+- `RUST-IPC-PROTOCOL.md`
+- `RUST-SERVICE-INVENTORY.md`
+- `RUST-FALLBACK-STRATEGY.md`
+- `RUST-PERFORMANCE-BENCHMARKS.md`
+- `RUST-RESOURCE-MANAGEMENT.md`
+- `RUST-MIGRATION-ROADMAP.md`

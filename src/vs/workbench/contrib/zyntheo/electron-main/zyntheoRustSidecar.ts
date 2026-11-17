@@ -4,52 +4,87 @@
  *--------------------------------------------------------------------------------------*/
 
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import {
+	ZYNTHEO_RUST_PROTOCOL_VERSION,
+	ZyntheoRustDiagnostic,
+	ZyntheoRustIndexResult,
+	ZyntheoRustMode,
+	ZyntheoRustTreeResult,
+} from '../common/zyntheoRustServiceTypes.js';
+
+interface Pending {
+	resolve: (value: any) => void;
+	reject: (err: Error) => void;
+	timer: NodeJS.Timeout;
+}
 
 /**
- * Feature-flagged Rust sidecar bridge.
- * Default: disabled — callers must fall back to TypeScript directoryStrService.
+ * Feature-flagged Rust sidecar bridge (stdio, length-prefixed JSON envelopes).
  *
- * Enable with env ZYNTHEO_RUST_SERVICES=1 or when a built binary is present and opted-in.
+ * Enable: ZYNTHEO_RUST_SERVICES=1
+ * Binary: ZYNTHEO_SIDECAR_PATH or rust/zyntheo-workspace/target/release/zyntheo-sidecar
+ *
+ * On any failure mode, methods return `undefined` so callers keep TypeScript fallback.
+ * Diagnostics are recorded (no file contents / secrets).
  */
 export class ZyntheoRustSidecar {
 	private proc: ChildProcessWithoutNullStreams | undefined;
 	private buffer = Buffer.alloc(0);
+	private nextId = 1;
+	private readonly pending = new Map<string, Pending>();
+	private mode: ZyntheoRustMode;
+	private lastReason: string | undefined;
+	private lastCode: string | undefined;
+	private restartCount = 0;
+	private permanentlyDisabled = false;
+	private readonly maxRestarts = 3;
+	private readonly requestTimeoutMs: number;
 
 	constructor(
 		private readonly logService: ILogService,
-		private readonly enabled: boolean = process.env['ZYNTHEO_RUST_SERVICES'] === '1',
-	) { }
-
-	get isEnabled(): boolean {
-		return this.enabled;
+		private readonly enabledByEnv: boolean = process.env['ZYNTHEO_RUST_SERVICES'] === '1',
+		requestTimeoutMs?: number,
+	) {
+		this.requestTimeoutMs = requestTimeoutMs
+			?? (Number(process.env['ZYNTHEO_RUST_TIMEOUT_MS']) || 30_000);
+		this.mode = this.enabledByEnv ? 'enabled_healthy' : 'disabled';
 	}
 
-	async listTree(root: string, maxDepth?: number, maxFiles?: number): Promise<{ entries: string[]; truncated: boolean } | undefined> {
-		if (!this.enabled) {
-			return undefined;
-		}
-		try {
-			await this.ensureStarted();
-			const response = await this.request({
-				op: 'list_tree',
-				root,
-				max_depth: maxDepth,
-				max_files: maxFiles,
-			});
-			if (response?.type === 'tree') {
-				return { entries: response.entries as string[], truncated: !!response.truncated };
-			}
-			this.logService.warn('[zyntheo-rust] listTree failed', response);
-			return undefined;
-		} catch (e) {
-			this.logService.warn('[zyntheo-rust] listTree error; use TS fallback', e);
-			return undefined;
-		}
+	getStatus(): ZyntheoRustDiagnostic {
+		return {
+			mode: this.permanentlyDisabled && this.mode !== 'disabled' ? this.mode : this.mode,
+			reason: this.lastReason,
+			code: this.lastCode,
+			at: Date.now(),
+		};
+	}
+
+	get isEnabled(): boolean {
+		return this.enabledByEnv && !this.permanentlyDisabled && this.mode !== 'disabled';
+	}
+
+	async listTree(root: string, maxDepth?: number, maxFiles?: number): Promise<ZyntheoRustTreeResult | undefined> {
+		return this.callTree('list_tree', { root, max_depth: maxDepth, max_files: maxFiles });
+	}
+
+	async listFiles(root: string, maxFiles?: number): Promise<ZyntheoRustTreeResult | undefined> {
+		return this.callTree('list_files', { root, max_files: maxFiles });
+	}
+
+	async buildIndex(root: string, maxDepth?: number, maxFiles?: number): Promise<ZyntheoRustIndexResult | undefined> {
+		return this.callIndex('build_index', { root, max_depth: maxDepth, max_files: maxFiles });
+	}
+
+	async refreshIndex(root: string): Promise<ZyntheoRustIndexResult | undefined> {
+		return this.callIndex('refresh_index', { root });
 	}
 
 	dispose(): void {
+		this.shutdownBestEffort();
+		this.rejectAll(new Error('sidecar disposed'));
 		try {
 			this.proc?.kill();
 		} catch {
@@ -58,51 +93,243 @@ export class ZyntheoRustSidecar {
 		this.proc = undefined;
 	}
 
+	private async callTree(op: string, payload: object): Promise<ZyntheoRustTreeResult | undefined> {
+		const result = await this.invoke(op, payload);
+		if (!result) {
+			return undefined;
+		}
+		return {
+			root: String(result.root ?? ''),
+			entries: Array.isArray(result.entries) ? result.entries.map(String) : [],
+			truncated: !!result.truncated,
+		};
+	}
+
+	private async callIndex(op: string, payload: object): Promise<ZyntheoRustIndexResult | undefined> {
+		const result = await this.invoke(op, payload);
+		if (!result) {
+			return undefined;
+		}
+		return {
+			root: String(result.root ?? ''),
+			entries: Array.isArray(result.entries) ? result.entries.map(String) : [],
+			truncated: !!result.truncated,
+			built_at_epoch_secs: result.built_at_epoch_secs,
+			root_mtime_epoch_secs: result.root_mtime_epoch_secs,
+			rebuilt: result.rebuilt,
+		};
+	}
+
+	private async invoke(op: string, payload: object): Promise<any | undefined> {
+		if (!this.enabledByEnv || this.permanentlyDisabled) {
+			this.setMode('disabled', 'rust services disabled');
+			return undefined;
+		}
+		try {
+			await this.ensureStarted();
+			const response = await this.request(op, payload);
+			if (!response?.ok) {
+				const code = response?.error?.code as string | undefined;
+				const message = response?.error?.message as string | undefined;
+				if (code === 'VERSION_MISMATCH') {
+					this.permanentlyDisabled = true;
+					this.setMode('version_mismatch', message ?? 'protocol mismatch', code);
+					this.disposeProcess();
+					return undefined;
+				}
+				this.setMode('operation_failed', message ?? 'operation failed', code);
+				this.logService.warn('[zyntheo-rust] op failed', op, code, message);
+				return undefined;
+			}
+			this.setMode('enabled_healthy');
+			return response.result;
+		} catch (e: any) {
+			const msg = e?.message ? String(e.message) : String(e);
+			if (msg.includes('timeout')) {
+				this.setMode('timeout', msg, 'TIMEOUT');
+			} else if (msg.includes('ENOENT') || msg.includes('binary missing')) {
+				this.setMode('binary_missing', msg, 'UNAVAILABLE');
+				this.permanentlyDisabled = true;
+			} else if (msg.includes('spawn') || msg.includes('startup')) {
+				this.setMode('startup_failed', msg, 'UNAVAILABLE');
+			} else {
+				this.setMode('operation_failed', msg);
+			}
+			this.logService.warn('[zyntheo-rust] invoke error; TS fallback', op, msg);
+			this.disposeProcess();
+			return undefined;
+		}
+	}
+
+	private setMode(mode: ZyntheoRustMode, reason?: string, code?: string): void {
+		this.mode = mode;
+		this.lastReason = reason;
+		this.lastCode = code;
+	}
+
+	private resolveBinary(): string {
+		return process.env['ZYNTHEO_SIDECAR_PATH']
+			|| join(process.cwd(), 'rust', 'zyntheo-workspace', 'target', 'release', 'zyntheo-sidecar');
+	}
+
 	private async ensureStarted(): Promise<void> {
 		if (this.proc && !this.proc.killed) {
 			return;
 		}
-		const binary = process.env['ZYNTHEO_SIDECAR_PATH']
-			|| join(process.cwd(), 'rust', 'zyntheo-workspace', 'target', 'release', 'zyntheo-sidecar');
-		this.proc = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-		this.proc.stderr.on('data', (d: Buffer) => {
-			this.logService.trace('[zyntheo-sidecar]', d.toString());
+		if (this.restartCount > this.maxRestarts) {
+			this.permanentlyDisabled = true;
+			throw new Error('startup: restart budget exhausted');
+		}
+		const binary = this.resolveBinary();
+		if (!existsSync(binary)) {
+			this.permanentlyDisabled = true;
+			throw new Error(`binary missing: ${binary}`);
+		}
+		this.restartCount += 1;
+		this.buffer = Buffer.alloc(0);
+		this.proc = spawn(binary, [], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+			env: { ...process.env },
 		});
+		this.proc.stderr.on('data', (d: Buffer) => {
+			// stderr only — never treat as protocol
+			this.logService.trace('[zyntheo-sidecar]', d.toString().trim());
+		});
+		this.proc.stdout.on('data', (chunk: Buffer) => this.onStdout(chunk));
 		this.proc.on('exit', (code) => {
 			this.logService.info('[zyntheo-sidecar] exited', code);
 			this.proc = undefined;
+			this.setMode('crashed', `exit code ${code}`, 'UNAVAILABLE');
+			this.rejectAll(new Error(`sidecar crashed (${code})`));
 		});
+		this.proc.on('error', (err) => {
+			this.logService.warn('[zyntheo-sidecar] process error', err);
+			this.setMode('startup_failed', String(err), 'UNAVAILABLE');
+		});
+
+		// Health handshake
+		const health = await this.request('health', {});
+		if (!health?.ok || health?.result?.protocol_version !== ZYNTHEO_RUST_PROTOCOL_VERSION) {
+			this.permanentlyDisabled = true;
+			this.setMode('version_mismatch', 'health/protocol failed', 'VERSION_MISMATCH');
+			this.disposeProcess();
+			throw new Error('startup: health/protocol failed');
+		}
+		this.setMode('enabled_healthy');
+		this.restartCount = Math.max(0, this.restartCount - 1); // successful start refunds one
 	}
 
-	private request(payload: object): Promise<any> {
+	private onStdout(chunk: Buffer): void {
+		this.buffer = Buffer.concat([this.buffer, chunk]);
+		while (this.buffer.length >= 4) {
+			const len = this.buffer.readUInt32BE(0);
+			if (len > 8 * 1024 * 1024) {
+				this.logService.warn('[zyntheo-rust] oversized frame; dropping process');
+				this.disposeProcess();
+				this.rejectAll(new Error('oversized frame'));
+				return;
+			}
+			if (this.buffer.length < 4 + len) {
+				return;
+			}
+			const json = this.buffer.subarray(4, 4 + len).toString('utf8');
+			this.buffer = this.buffer.subarray(4 + len);
+			try {
+				const msg = JSON.parse(json);
+				const id = String(msg.id ?? '');
+				const pending = this.pending.get(id);
+				if (pending) {
+					clearTimeout(pending.timer);
+					this.pending.delete(id);
+					pending.resolve(msg);
+				}
+			} catch (e) {
+				this.logService.warn('[zyntheo-rust] malformed JSON frame', e);
+			}
+		}
+	}
+
+	private request(op: string, payload: object): Promise<any> {
 		return new Promise((resolve, reject) => {
-			if (!this.proc) {
+			if (!this.proc || this.proc.killed) {
 				reject(new Error('sidecar not started'));
 				return;
 			}
-			const body = Buffer.from(JSON.stringify(payload), 'utf8');
+			const id = String(this.nextId++);
+			const envelope = {
+				protocol_version: ZYNTHEO_RUST_PROTOCOL_VERSION,
+				id,
+				op,
+				payload,
+			};
+			const body = Buffer.from(JSON.stringify(envelope), 'utf8');
 			const header = Buffer.alloc(4);
 			header.writeUInt32BE(body.length, 0);
-			const onData = (chunk: Buffer) => {
-				this.buffer = Buffer.concat([this.buffer, chunk]);
-				if (this.buffer.length < 4) {
-					return;
-				}
-				const len = this.buffer.readUInt32BE(0);
-				if (this.buffer.length < 4 + len) {
-					return;
-				}
-				const json = this.buffer.subarray(4, 4 + len).toString('utf8');
-				this.buffer = this.buffer.subarray(4 + len);
-				this.proc?.stdout.off('data', onData);
+			const timer = setTimeout(() => {
+				this.pending.delete(id);
+				// best-effort cancel
 				try {
-					resolve(JSON.parse(json));
-				} catch (e) {
-					reject(e);
+					this.writeRaw({
+						protocol_version: ZYNTHEO_RUST_PROTOCOL_VERSION,
+						id: String(this.nextId++),
+						op: 'cancel',
+						payload: { target_id: id },
+					});
+				} catch {
+					// ignore
 				}
-			};
-			this.proc.stdout.on('data', onData);
-			this.proc.stdin.write(Buffer.concat([header, body]));
+				reject(new Error(`timeout after ${this.requestTimeoutMs}ms`));
+			}, this.requestTimeoutMs);
+			this.pending.set(id, { resolve, reject, timer });
+			try {
+				this.proc.stdin.write(Buffer.concat([header, body]));
+			} catch (e) {
+				clearTimeout(timer);
+				this.pending.delete(id);
+				reject(e instanceof Error ? e : new Error(String(e)));
+			}
 		});
+	}
+
+	private writeRaw(envelope: object): void {
+		if (!this.proc) {
+			return;
+		}
+		const body = Buffer.from(JSON.stringify(envelope), 'utf8');
+		const header = Buffer.alloc(4);
+		header.writeUInt32BE(body.length, 0);
+		this.proc.stdin.write(Buffer.concat([header, body]));
+	}
+
+	private shutdownBestEffort(): void {
+		try {
+			if (this.proc && !this.proc.killed) {
+				this.writeRaw({
+					protocol_version: ZYNTHEO_RUST_PROTOCOL_VERSION,
+					id: String(this.nextId++),
+					op: 'shutdown',
+					payload: {},
+				});
+			}
+		} catch {
+			// ignore
+		}
+	}
+
+	private disposeProcess(): void {
+		try {
+			this.proc?.kill();
+		} catch {
+			// ignore
+		}
+		this.proc = undefined;
+	}
+
+	private rejectAll(err: Error): void {
+		for (const [, p] of this.pending) {
+			clearTimeout(p.timer);
+			p.reject(err);
+		}
+		this.pending.clear();
 	}
 }

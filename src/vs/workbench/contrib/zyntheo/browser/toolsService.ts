@@ -1,4 +1,5 @@
 import { CancellationToken } from '../../../../base/common/cancellation.js'
+import { Schemas } from '../../../../base/common/network.js'
 import { URI } from '../../../../base/common/uri.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
@@ -19,6 +20,7 @@ import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
 import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
 import { IZyntheoSettingsService } from '../common/zyntheoSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
+import { IZyntheoRustService } from '../common/zyntheoRustService.js'
 
 
 // tool use for AI
@@ -153,8 +155,80 @@ export class ToolsService implements IToolsService {
 		@IDirectoryStrService private readonly directoryStrService: IDirectoryStrService,
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IZyntheoSettingsService private readonly zyntheoSettingsService: IZyntheoSettingsService,
+		@IZyntheoRustService private readonly rustService: IZyntheoRustService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
+
+		const paginateUris = (uris: URI[], pageNumber: number) => {
+			const fromIdx = MAX_CHILDREN_URIs_PAGE * (pageNumber - 1)
+			const toIdx = MAX_CHILDREN_URIs_PAGE * pageNumber - 1
+			const page = uris.slice(fromIdx, toIdx + 1)
+			const hasNextPage = (uris.length - 1) - toIdx >= 1
+			return { uris: page, hasNextPage }
+		}
+
+		/** Rust pathname filter for local folders; `undefined` → use VS Code search. */
+		const tryRustPathnameSearch = async (queryStr: string, includePattern: string | null): Promise<URI[] | undefined> => {
+			const folders = workspaceContextService.getWorkspace().folders.map(f => f.uri)
+			if (folders.length === 0 || folders.some(f => f.scheme !== Schemas.file)) {
+				return undefined
+			}
+			const q = queryStr.toLowerCase()
+			const include = includePattern?.toLowerCase() ?? null
+			const out: URI[] = []
+			const seen = new Set<string>()
+			for (const folder of folders) {
+				const tree = await this.rustService.listFiles(folder.fsPath, 50_000)
+				if (!tree) {
+					return undefined
+				}
+				for (const rel of tree.entries) {
+					const lower = rel.toLowerCase()
+					if (!lower.includes(q)) {
+						continue
+					}
+					if (include && !lower.includes(include)) {
+						continue
+					}
+					const uri = URI.joinPath(folder, rel)
+					const key = uri.toString()
+					if (!seen.has(key)) {
+						seen.add(key)
+						out.push(uri)
+					}
+				}
+			}
+			return out
+		}
+
+		/** Rust content search for local folders; `undefined` → use VS Code text search. */
+		const tryRustContentSearch = async (queryStr: string, isRegex: boolean, searchFolders: URI[]): Promise<URI[] | undefined> => {
+			if (searchFolders.length === 0 || searchFolders.some(f => f.scheme !== Schemas.file)) {
+				return undefined
+			}
+			const out: URI[] = []
+			const seen = new Set<string>()
+			for (const folder of searchFolders) {
+				const res = await this.rustService.search(folder.fsPath, queryStr, {
+					literal: !isRegex,
+					caseSensitive: false,
+					maxMatches: Math.max(MAX_CHILDREN_URIs_PAGE * 20, 200),
+					maxFiles: 20_000,
+				})
+				if (!res) {
+					return undefined
+				}
+				for (const m of res.matches) {
+					const uri = URI.joinPath(folder, m.path)
+					const key = uri.toString()
+					if (!seen.has(key)) {
+						seen.add(key)
+						out.push(uri)
+					}
+				}
+			}
+			return out
+		}
 
 		this.validateParams = {
 			read_file: (params: RawToolParamsObj) => {
@@ -330,6 +404,12 @@ export class ToolsService implements IToolsService {
 			},
 
 			search_pathnames_only: async ({ query: queryStr, includePattern, pageNumber }) => {
+				// Optional Rust path (ZYNTHEO_RUST_SERVICES=1); substring match, not VS Code fuzzy score.
+				const rustUris = await tryRustPathnameSearch(queryStr, includePattern)
+				if (rustUris !== undefined) {
+					const page = paginateUris(rustUris, pageNumber)
+					return { result: page }
+				}
 
 				const query = queryBuilder.file(workspaceContextService.getWorkspace().folders.map(f => f.uri), {
 					filePattern: queryStr,
@@ -352,6 +432,12 @@ export class ToolsService implements IToolsService {
 				const searchFolders = searchInFolder === null ?
 					workspaceContextService.getWorkspace().folders.map(f => f.uri)
 					: [searchInFolder]
+
+				const rustUris = await tryRustContentSearch(queryStr, isRegex, searchFolders)
+				if (rustUris !== undefined) {
+					const page = paginateUris(rustUris, pageNumber)
+					return { result: { queryStr, uris: page.uris, hasNextPage: page.hasNextPage } }
+				}
 
 				const query = queryBuilder.text({
 					pattern: queryStr,

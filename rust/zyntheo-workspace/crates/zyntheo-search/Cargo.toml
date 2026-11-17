@@ -1,0 +1,12 @@
+[package]
+name = "zyntheo-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bounded workspace text search for Zyntheo sidecar"
+
+[dependencies]
+zyntheo-core = { workspace = true }
+ignore = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }

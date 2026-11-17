@@ -5,7 +5,7 @@
 
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import {
 	ZYNTHEO_RUST_PROTOCOL_VERSION,
@@ -13,6 +13,12 @@ import {
 	ZyntheoRustIndexResult,
 	ZyntheoRustMode,
 	ZyntheoRustTreeResult,
+	ZyntheoRustFileMeta,
+	ZyntheoRustResourceStats,
+	ZyntheoRustSearchOptions,
+	ZyntheoRustSearchResult,
+	ZyntheoRustWatchEvent,
+	ZyntheoRustWatchPollResult,
 } from '../common/zyntheoRustServiceTypes.js';
 
 interface Pending {
@@ -42,6 +48,12 @@ export class ZyntheoRustSidecar {
 	private permanentlyDisabled = false;
 	private readonly maxRestarts = 3;
 	private readonly requestTimeoutMs: number;
+	/** Soft-disable Rust when sidecar RSS exceeds this (bytes). 0 = off. */
+	private readonly maxRssBytes: number;
+	private readonly maxLimitExceededStreak = 3;
+	private limitExceededStreak = 0;
+	private opsSinceResourceCheck = 0;
+	private readonly resourceCheckEvery = 8;
 
 	constructor(
 		private readonly logService: ILogService,
@@ -50,6 +62,7 @@ export class ZyntheoRustSidecar {
 	) {
 		this.requestTimeoutMs = requestTimeoutMs
 			?? (Number(process.env['ZYNTHEO_RUST_TIMEOUT_MS']) || 30_000);
+		this.maxRssBytes = Number(process.env['ZYNTHEO_RUST_MAX_RSS_BYTES']) || 0;
 		this.mode = this.enabledByEnv ? 'enabled_healthy' : 'disabled';
 	}
 
@@ -80,6 +93,89 @@ export class ZyntheoRustSidecar {
 
 	async refreshIndex(root: string): Promise<ZyntheoRustIndexResult | undefined> {
 		return this.callIndex('refresh_index', { root });
+	}
+
+	async watchStart(root: string, debounceMs?: number): Promise<string | undefined> {
+		const result = await this.invoke('watch_start', { root, debounce_ms: debounceMs });
+		return result?.watch_id ? String(result.watch_id) : undefined;
+	}
+
+	async watchPoll(watchId: string, maxEvents?: number): Promise<ZyntheoRustWatchPollResult | undefined> {
+		const result = await this.invoke('watch_poll', { watch_id: watchId, max_events: maxEvents });
+		if (!result) {
+			return undefined;
+		}
+		const events: ZyntheoRustWatchEvent[] = Array.isArray(result.events)
+			? result.events.map((e: any) => ({
+				path: String(e.path ?? ''),
+				kind: e.kind === 'remove' ? 'remove' : 'any',
+			}))
+			: [];
+		return { events, truncated: !!result.truncated };
+	}
+
+	async watchStop(watchId: string): Promise<boolean> {
+		const result = await this.invoke('watch_stop', { watch_id: watchId });
+		return !!result;
+	}
+
+	async search(root: string, query: string, opts?: ZyntheoRustSearchOptions): Promise<ZyntheoRustSearchResult | undefined> {
+		const result = await this.invoke('search', {
+			root,
+			query,
+			case_sensitive: opts?.caseSensitive,
+			literal: opts?.literal ?? true,
+			max_matches: opts?.maxMatches,
+			max_files: opts?.maxFiles,
+			max_file_bytes: opts?.maxFileBytes,
+		});
+		if (!result) {
+			return undefined;
+		}
+		return {
+			matches: Array.isArray(result.matches)
+				? result.matches.map((m: any) => ({
+					path: String(m.path ?? ''),
+					line: Number(m.line ?? 0),
+					column: Number(m.column ?? 0),
+					text: String(m.text ?? ''),
+				}))
+				: [],
+			files_scanned: Number(result.files_scanned ?? 0),
+			truncated: !!result.truncated,
+		};
+	}
+
+	async statPaths(paths: string[], root?: string, maxPaths?: number): Promise<{ entries: ZyntheoRustFileMeta[]; truncated: boolean } | undefined> {
+		const result = await this.invoke('stat_paths', { root, paths, max_paths: maxPaths });
+		if (!result) {
+			return undefined;
+		}
+		const entries: ZyntheoRustFileMeta[] = Array.isArray(result.entries)
+			? result.entries.map((e: any) => ({
+				path: String(e.path ?? ''),
+				is_dir: !!e.is_dir,
+				size: Number(e.size ?? 0),
+				mtime_epoch_secs: Number(e.mtime_epoch_secs ?? 0),
+			}))
+			: [];
+		return { entries, truncated: !!result.truncated };
+	}
+
+	async resourceStats(): Promise<ZyntheoRustResourceStats | undefined> {
+		const result = await this.invoke('resource_stats', {});
+		if (!result) {
+			return undefined;
+		}
+		return {
+			rss_bytes: result.rss_bytes != null ? Number(result.rss_bytes) : undefined,
+			jobs_active: Number(result.jobs_active ?? 0),
+			jobs_max: Number(result.jobs_max ?? 0),
+			index_cached_roots: Number(result.index_cached_roots ?? 0),
+			index_entries: Number(result.index_entries ?? 0),
+			watches: Number(result.watches ?? 0),
+			pid: Number(result.pid ?? 0),
+		};
 	}
 
 	dispose(): void {
@@ -122,7 +218,9 @@ export class ZyntheoRustSidecar {
 
 	private async invoke(op: string, payload: object): Promise<any | undefined> {
 		if (!this.enabledByEnv || this.permanentlyDisabled) {
-			this.setMode('disabled', 'rust services disabled');
+			if (this.mode !== 'adaptive_disabled') {
+				this.setMode('disabled', 'rust services disabled');
+			}
 			return undefined;
 		}
 		try {
@@ -137,11 +235,24 @@ export class ZyntheoRustSidecar {
 					this.disposeProcess();
 					return undefined;
 				}
+				if (code === 'LIMIT_EXCEEDED') {
+					this.limitExceededStreak += 1;
+					if (this.limitExceededStreak >= this.maxLimitExceededStreak) {
+						this.adaptivelyDisable(`repeated LIMIT_EXCEEDED (${this.limitExceededStreak})`);
+						return undefined;
+					}
+				} else {
+					this.limitExceededStreak = 0;
+				}
 				this.setMode('operation_failed', message ?? 'operation failed', code);
 				this.logService.warn('[zyntheo-rust] op failed', op, code, message);
 				return undefined;
 			}
+			this.limitExceededStreak = 0;
 			this.setMode('enabled_healthy');
+			if (op !== 'resource_stats') {
+				await this.maybeCheckResources();
+			}
 			return response.result;
 		} catch (e: any) {
 			const msg = e?.message ? String(e.message) : String(e);
@@ -161,6 +272,33 @@ export class ZyntheoRustSidecar {
 		}
 	}
 
+	private adaptivelyDisable(reason: string): void {
+		this.permanentlyDisabled = true;
+		this.setMode('adaptive_disabled', reason, 'LIMIT_EXCEEDED');
+		this.logService.warn('[zyntheo-rust] adaptive disable; TS fallback', reason);
+		this.disposeProcess();
+	}
+
+	private async maybeCheckResources(): Promise<void> {
+		if (this.maxRssBytes <= 0 || this.permanentlyDisabled) {
+			return;
+		}
+		this.opsSinceResourceCheck += 1;
+		if (this.opsSinceResourceCheck < this.resourceCheckEvery) {
+			return;
+		}
+		this.opsSinceResourceCheck = 0;
+		try {
+			const response = await this.request('resource_stats', {});
+			const rss = response?.ok ? Number(response.result?.rss_bytes ?? 0) : 0;
+			if (rss > 0 && rss > this.maxRssBytes) {
+				this.adaptivelyDisable(`sidecar RSS ${rss} > ${this.maxRssBytes}`);
+			}
+		} catch {
+			// ignore sampling failures
+		}
+	}
+
 	private setMode(mode: ZyntheoRustMode, reason?: string, code?: string): void {
 		this.mode = mode;
 		this.lastReason = reason;
@@ -168,8 +306,33 @@ export class ZyntheoRustSidecar {
 	}
 
 	private resolveBinary(): string {
-		return process.env['ZYNTHEO_SIDECAR_PATH']
-			|| join(process.cwd(), 'rust', 'zyntheo-workspace', 'target', 'release', 'zyntheo-sidecar');
+		const exe = process.platform === 'win32' ? 'zyntheo-sidecar.exe' : 'zyntheo-sidecar';
+		let appPath: string | undefined;
+		try {
+			// electron-main only
+			appPath = require('electron').app?.getAppPath?.();
+		} catch {
+			appPath = undefined;
+		}
+		const candidates = [
+			process.env['ZYNTHEO_SIDECAR_PATH'],
+			appPath ? join(appPath, 'resources', 'helpers', exe) : undefined,
+			// Packaged helper next to Electron binary / resources
+			join(dirname(process.execPath), exe),
+			join(dirname(process.execPath), 'resources', 'helpers', exe),
+			join(dirname(process.execPath), 'helpers', exe),
+			join(dirname(process.execPath), '..', 'Resources', 'app', 'resources', 'helpers', exe),
+			// Dev / staged helpers
+			join(process.cwd(), 'resources', 'helpers', exe),
+			join(process.cwd(), 'rust', 'zyntheo-workspace', 'target', 'release', exe),
+			join(process.cwd(), '.build', 'zyntheo-sidecar', exe),
+		].filter((p): p is string => !!p);
+		for (const p of candidates) {
+			if (existsSync(p)) {
+				return p;
+			}
+		}
+		return candidates[candidates.length - 1]!;
 	}
 
 	private async ensureStarted(): Promise<void> {

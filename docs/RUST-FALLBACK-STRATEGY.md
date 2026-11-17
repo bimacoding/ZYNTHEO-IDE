@@ -21,6 +21,14 @@ TypeScript implementations are **never deleted**. Rust is opt-in.
 
 Logged via `ILogService` at warn/trace — structured enough for support, not a telemetry dump of workspace trees.
 
+## AI tools
+
+| Tool | Rust path | Fallback |
+|------|-----------|----------|
+| `search_for_files` | sidecar `search` on `file://` folders | `ISearchService.textSearch` |
+| `search_pathnames_only` | sidecar `list_files` + substring filter | `ISearchService.fileSearch` (fuzzy) |
+| `search_in_file` | — | editor model (TS only) |
+
 ## Caller contract
 
 Methods return `undefined` on failure. Callers **must** keep TS path:

@@ -1,46 +1,40 @@
 # Rust Performance Benchmarks
 
-**Status:** HARNESS ONLY — no application-level RAM claims yet.
+**Policy:** Do not claim Electron RAM/CPU improvements without app-level measurements.
 
-## Policy
+## Process-level compare (2026-11-18, macOS)
 
-Do **not** claim memory/CPU improvements without reproducible numbers from identical workloads.
+Command: `npm run bench-zyntheo-sidecar` (defaults to `./src`)
 
-## Local micro-benchmark (sidecar)
+Latest run (via `npm run verify-zyntheo-rust`):
+
+| Workload | Method | Wall clock | Files |
+|----------|--------|------------|-------|
+| `zyntheo-ide/src` (~5.4k files) | Python `os.walk` baseline (similar excludes) | **191.1 ms** | 5426 |
+| same | Rust sidecar `list_files` (release) | **64.4 ms** | 5392 |
+
+**Ratio:** Python walk ≈ **2.97×** Rust `list_files` on this machine/workload.
+
+### Caveats (required)
+
+- This is **not** Electron main/renderer/extension-host RSS.
+- Python walk is a stand-in baseline, not `IFileService` / `directoryStrService`.
+- File counts differ slightly (ignore rules / hidden handling).
+- Re-run locally before citing numbers: `npm run bench-zyntheo-sidecar`.
+
+## Sidecar micro ops
 
 ```bash
-# Build release sidecar
-cd rust/zyntheo-workspace && cargo build --release -p zyntheo-sidecar
-
-# Smoke + timing helper
-./scripts/rust-sidecar-bench.sh /path/to/workspace
+./scripts/rust-sidecar-bench.sh ./rust/zyntheo-workspace
 ```
 
-Records wall-clock for `list_tree` / `list_files` only (sidecar process).  
-Does **not** measure Electron main/renderer/extension host.
-
-## Application-level matrix (TODO)
+## Application-level matrix
 
 | Metric | TS-only | Hybrid Rust | Notes |
 |--------|---------|-------------|-------|
 | Electron main RSS | NOT_STARTED | NOT_STARTED | |
 | Renderer RSS | NOT_STARTED | NOT_STARTED | |
 | Extension host RSS | NOT_STARTED | NOT_STARTED | |
-| Sidecar RSS | N/A | NOT_STARTED | |
+| Sidecar RSS | N/A | sampled via `resource_stats` | adaptive disable optional |
 | Total app RSS | NOT_STARTED | NOT_STARTED | |
-| Startup time | NOT_STARTED | NOT_STARTED | |
-| Idle memory | NOT_STARTED | NOT_STARTED | |
-| Large workspace list_files | NOT_STARTED | NOT_STARTED | |
-
-### Workloads to use
-
-- Small (<100 files)
-- Medium (~5k files)
-- Large (>50k files)
-- Repeated file changes
-- Long-running session
-- Indexing under load
-
-### Investigate when measuring
-
-Duplicate scanning · duplicate indexing · redundant caches · IPC serialization · unbounded queues · thread/worker sprawl · leaks after workspace close · restart leaks.
+| Large workspace list_files (process) | baseline above | **measured** | process-level only |

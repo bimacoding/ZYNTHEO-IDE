@@ -45,10 +45,26 @@ async function ensureCompiled() {
 	}
 }
 
+async function ensureZyntheoSidecar() {
+	// Optional: build/stage Rust sidecar when cargo is available. Never fail launch.
+	const releaseBin = process.platform === 'win32'
+		? 'rust/zyntheo-workspace/target/release/zyntheo-sidecar.exe'
+		: 'rust/zyntheo-workspace/target/release/zyntheo-sidecar';
+	if (await exists(releaseBin)) {
+		return;
+	}
+	try {
+		await runProcess('bash', ['./scripts/build-zyntheo-sidecar.sh']);
+	} catch (err) {
+		console.warn('[preLaunch] zyntheo-sidecar build skipped:', err);
+	}
+}
+
 async function main() {
 	await ensureNodeModules();
 	await getElectron();
 	await ensureCompiled();
+	await ensureZyntheoSidecar();
 
 	// Can't require this until after dependencies are installed
 	const { getBuiltInExtensions } = require('./builtInExtensions');

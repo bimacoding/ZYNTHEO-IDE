@@ -119,6 +119,37 @@ pub fn file_metadata(path: &Path) -> Result<FileMeta, ZyntheoError> {
     })
 }
 
+/// Batch metadata for relative-or-absolute paths under an optional root.
+pub fn stat_paths(
+    root: Option<&Path>,
+    paths: &[String],
+    max_paths: usize,
+    cancel: &CancelToken,
+) -> Result<(Vec<FileMeta>, bool), ZyntheoError> {
+    let limit = max_paths.max(1).min(10_000);
+    let truncated = paths.len() > limit;
+    let mut out = Vec::with_capacity(limit.min(paths.len()));
+    for p in paths.iter().take(limit) {
+        cancel.check()?;
+        let full = match root {
+            Some(r) => r.join(p),
+            None => PathBuf::from(p),
+        };
+        match file_metadata(&full) {
+            Ok(mut m) => {
+                if let Some(r) = root {
+                    if let Ok(rel) = full.strip_prefix(r) {
+                        m.path = rel.to_string_lossy().replace('\\', "/");
+                    }
+                }
+                out.push(m);
+            }
+            Err(_) => continue,
+        }
+    }
+    Ok((out, truncated))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

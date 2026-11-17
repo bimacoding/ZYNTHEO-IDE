@@ -31,6 +31,8 @@ src/vs/workbench/contrib/void/browser/react/src2/**
 src/vs/workbench/contrib/zyntheo/browser/react/out/**
 src/vs/workbench/contrib/zyntheo/browser/react/src2/**
 rust/zyntheo-workspace/**/target/
+resources/helpers/zyntheo-sidecar
+resources/helpers/zyntheo-sidecar.exe
 .env
 .env.*
 !.env.example

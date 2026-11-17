@@ -14,5 +14,7 @@ zyntheo-core = { workspace = true }
 zyntheo-ipc = { workspace = true }
 zyntheo-fs = { workspace = true }
 zyntheo-index = { workspace = true }
+zyntheo-watch = { workspace = true }
+zyntheo-search = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

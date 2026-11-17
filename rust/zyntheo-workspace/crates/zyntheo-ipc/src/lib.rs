@@ -83,6 +83,36 @@ pub struct CancelPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchStartPayload {
+    pub root: String,
+    pub debounce_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchIdPayload {
+    pub watch_id: String,
+    pub max_events: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchPayload {
+    pub root: String,
+    pub query: String,
+    pub case_sensitive: Option<bool>,
+    pub literal: Option<bool>,
+    pub max_matches: Option<usize>,
+    pub max_files: Option<usize>,
+    pub max_file_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatPathsPayload {
+    pub root: Option<String>,
+    pub paths: Vec<String>,
+    pub max_paths: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeResultJson {
     pub root: String,
     pub entries: Vec<String>,

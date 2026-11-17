@@ -8,33 +8,34 @@
 
 Do **not** migrate editor UI or extension host just to raise Rust LOC %.
 
-## Phase 0 — Foundation (DONE / this pass)
+## Phase 0 — Foundation (DONE)
 
 - Protocol v1 envelopes, health, shutdown, cancel
 - FS list_tree / list_files with excludes
 - Index cache + stale refresh
-- TS client fallback modes A–H
+- TS client fallback modes A–H (+ `adaptive_disabled`)
 - Channel wiring + optional `getAllURIsInDirectory` Rust path
 
-## Phase 1 — Make P1 real for AI context
+## Phase 1 — Make P1 real for AI context (DONE)
 
-1. Align Rust tree output with `directoryStrService` string contract **or** keep TS for strings and Rust for bulk URI/index only (prefer measurable win).
-2. Native file watcher (`notify`) with debounce + ignore rules.
-3. Package `zyntheo-sidecar` into desktop builds.
-4. Integration tests: crash, timeout, missing binary, version mismatch.
-5. First **measured** before/after on large repo URI listing.
+1. ASCII `directoryStr` stays TypeScript; Rust for bulk URI/index.
+2. Native file watcher — `zyntheo-watch` + `watch_*` IPC (poll model).
+3. Package staging — `.build/` + `resources/helpers/` + gulp embed when binary present.
+4. Integration tests — watch/search/stat/respawn/resource_stats.
+5. Measured list_files compare — process-level (see `RUST-PERFORMANCE-BENCHMARKS.md`).
 
-## Phase 2 — Search & context
+## Phase 2 — Search & context (DONE)
 
-1. Ripgrep-class search behind IPC (allowlisted roots only).
-2. Metadata batch APIs for context gathering.
-3. Dedupe scanning between AI context and index.
+1. Bounded `search` IPC (literal/regex, caps, no shell).
+2. `stat_paths` metadata batch.
+3. Dedupe scanning — `list_files` reuses index (`cache_hit`).
+4. Wire `search` into AI tools — `search_for_files` / `search_pathnames_only` when flagged.
 
-## Phase 3 — Scheduler & monitoring
+## Phase 3 — Scheduler & monitoring (DONE)
 
-1. Bounded background jobs.
-2. Resource sampling API for diagnostics panel.
-3. Adaptive disable when host memory pressure is high.
+1. Bounded background jobs — `JobGate` on heavy ops (`max_concurrency` default 2).
+2. Resource sampling — `resource_stats` IPC (RSS, jobs, index, watches).
+3. Adaptive disable — TS client: `ZYNTHEO_RUST_MAX_RSS_BYTES` and repeated `LIMIT_EXCEEDED` → mode `adaptive_disabled`, TS fallback kept.
 
 ## Exit criteria for “Rust is primary performance engine”
 
@@ -42,6 +43,8 @@ Do **not** migrate editor UI or extension host just to raise Rust LOC %.
 - TS fallback still works with flag off.
 - Documented benchmarks show improvement **or** justify keeping TS for that path.
 - No extension/API regressions.
+
+**Verification:** `npm run verify-zyntheo-rust` (ALL_PASS).
 
 ## Non-goals
 

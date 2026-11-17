@@ -430,6 +430,24 @@ function packageTask(platform, arch, sourceFolderName, destinationFolderName, op
 				.pipe(rename('bin/' + product.applicationName)));
 		}
 
+		// Zyntheo: embed Rust sidecar helper when present (optional; TS fallback if missing).
+		const sidecarName = platform === 'win32' ? 'zyntheo-sidecar.exe' : 'zyntheo-sidecar';
+		const sidecarCandidates = [
+			path.join(root, 'resources', 'helpers', sidecarName),
+			path.join(root, '.build', 'zyntheo-sidecar', sidecarName),
+		];
+		const sidecarPath = sidecarCandidates.find(p => {
+			try { return fs.existsSync(p); } catch { return false; }
+		});
+		if (sidecarPath) {
+			result = es.merge(
+				result,
+				gulp.src(sidecarPath, { base: path.dirname(sidecarPath) })
+					.pipe(rename(f => { f.dirname = 'resources/helpers'; }))
+					.pipe(util.setExecutableBit(['**/*']))
+			);
+		}
+
 		result = inlineMeta(result, {
 			targetPaths: bootstrapEntryPoints,
 			packageJsonFn: () => packageJsonContents,

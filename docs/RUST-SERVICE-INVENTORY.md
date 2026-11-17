@@ -4,36 +4,37 @@ Legend: **IMPLEMENTED** · **PARTIAL** · **SCAFFOLDED** · **NOT STARTED**
 
 ## Priority 1
 
-| Component | Rust | TS fallback | Wired | Notes |
-|-----------|------|-------------|-------|-------|
-| Filesystem scanning | IMPLEMENTED (`zyntheo-fs`) | Yes (`IFileService`) | PARTIAL | Used via `list_files` / `list_tree` |
-| Workspace tree generation | PARTIAL | Yes (ASCII tree in `directoryStrService`) | No for string tree | Rust returns flat relative paths |
-| File watching | SCAFFOLDED | IDE file watcher | No | Next: `notify` with debounce + caps |
-| Incremental workspace indexing | PARTIAL | N/A (no prior index) | Via IPC ops | Cache + root mtime refresh |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Filesystem scanning | IMPLEMENTED | `list_tree` / `list_files` |
+| Workspace ASCII tree string | DEFERRED (TS) | Intentional |
+| File watching | IMPLEMENTED | `watch_*` poll IPC |
+| Incremental index | PARTIAL | mtime cache refresh |
+| Packaging stage | IMPLEMENTED | `.build/` + `resources/helpers/` |
+| Process-level list_files bench | MEASURED | see benchmarks doc |
 
 ## Priority 2
 
-| Component | Status |
-|-----------|--------|
-| Global code search | NOT STARTED |
-| Context extraction | NOT STARTED |
-| File metadata processing | PARTIAL (`file_metadata` helper) |
-| Large repository traversal | PARTIAL (bounded walk) |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Global code search | IMPLEMENTED | `search` op + AI tools `search_for_files` / `search_pathnames_only` (flagged) |
+| File metadata batch | IMPLEMENTED | `stat_paths` |
+| Context extraction | NOT STARTED | |
+| Large repo traversal | PARTIAL | bounded walks |
 
 ## Priority 3
 
 | Component | Status |
 |-----------|--------|
-| Background task scheduling | SCAFFOLDED (sync dispatch + cancel map) |
-| Process lifecycle management | IMPLEMENTED (TS client) |
+| Background task scheduling | SCAFFOLDED |
+| Process lifecycle | IMPLEMENTED |
 | Resource monitoring | NOT STARTED |
 
-## Electron / TS bridge
+## Commands
 
-| Item | Status |
-|------|--------|
-| `ZyntheoRustSidecar` | IMPLEMENTED |
-| Main service + `zyntheo-channel-rust` | IMPLEMENTED |
-| Renderer `IZyntheoRustService` | IMPLEMENTED |
-| Feature flag `ZYNTHEO_RUST_SERVICES=1` | IMPLEMENTED |
-| Packaged binary in release builds | NOT STARTED |
+```bash
+npm run build-zyntheo-sidecar
+npm run test-zyntheo-sidecar
+npm run bench-zyntheo-sidecar
+cd rust/zyntheo-workspace && unset CARGO_TARGET_DIR && cargo test --workspace --target-dir ./target
+```

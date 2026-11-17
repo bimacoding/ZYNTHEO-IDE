@@ -9,7 +9,12 @@ import {
 	IZyntheoRustMainService,
 	ZyntheoRustDiagnostic,
 	ZyntheoRustIndexResult,
+	ZyntheoRustFileMeta,
+	ZyntheoRustResourceStats,
+	ZyntheoRustSearchOptions,
+	ZyntheoRustSearchResult,
 	ZyntheoRustTreeResult,
+	ZyntheoRustWatchPollResult,
 } from '../common/zyntheoRustServiceTypes.js';
 import { ZyntheoRustSidecar } from './zyntheoRustSidecar.js';
 
@@ -43,5 +48,29 @@ export class ZyntheoRustMainService extends Disposable implements IZyntheoRustMa
 
 	refreshIndex(root: string): Promise<ZyntheoRustIndexResult | undefined> {
 		return this.sidecar.refreshIndex(root);
+	}
+
+	watchStart(root: string, debounceMs?: number): Promise<string | undefined> {
+		return this.sidecar.watchStart(root, debounceMs);
+	}
+
+	watchPoll(watchId: string, maxEvents?: number): Promise<ZyntheoRustWatchPollResult | undefined> {
+		return this.sidecar.watchPoll(watchId, maxEvents);
+	}
+
+	watchStop(watchId: string): Promise<boolean> {
+		return this.sidecar.watchStop(watchId);
+	}
+
+	search(root: string, query: string, opts?: ZyntheoRustSearchOptions): Promise<ZyntheoRustSearchResult | undefined> {
+		return this.sidecar.search(root, query, opts);
+	}
+
+	statPaths(paths: string[], root?: string, maxPaths?: number): Promise<{ entries: ZyntheoRustFileMeta[]; truncated: boolean } | undefined> {
+		return this.sidecar.statPaths(paths, root, maxPaths);
+	}
+
+	resourceStats(): Promise<ZyntheoRustResourceStats | undefined> {
+		return this.sidecar.resourceStats();
 	}
 }

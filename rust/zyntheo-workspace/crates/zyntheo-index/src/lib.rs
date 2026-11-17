@@ -79,6 +79,17 @@ impl WorkspaceIndex {
         limits: &ResourceLimits,
         cancel: &CancelToken,
     ) -> Result<(IndexSnapshot, bool), ZyntheoError> {
+        self.refresh_if_stale_with_limits(root, limits, None, None, cancel)
+    }
+
+    pub fn refresh_if_stale_with_limits(
+        &self,
+        root: &Path,
+        limits: &ResourceLimits,
+        max_depth: Option<usize>,
+        max_files: Option<usize>,
+        cancel: &CancelToken,
+    ) -> Result<(IndexSnapshot, bool), ZyntheoError> {
         let current_mtime = file_metadata(root)
             .map(|m| m.mtime_epoch_secs)
             .unwrap_or(0);
@@ -87,8 +98,40 @@ impl WorkspaceIndex {
                 return Ok((existing, false));
             }
         }
-        let snap = self.build(root, limits, None, None, cancel)?;
+        let snap = self.build(root, limits, max_depth, max_files, cancel)?;
         Ok((snap, true))
+    }
+
+    /// File paths only from cached/fresh index — avoids a second filesystem walk.
+    pub fn list_files_deduped(
+        &self,
+        root: &Path,
+        limits: &ResourceLimits,
+        max_files: Option<usize>,
+        cancel: &CancelToken,
+    ) -> Result<(Vec<String>, bool, bool), ZyntheoError> {
+        let (snap, rebuilt) =
+            self.refresh_if_stale_with_limits(root, limits, None, max_files, cancel)?;
+        let limit = max_files.unwrap_or(limits.max_files);
+        let mut files: Vec<String> = snap
+            .entries
+            .into_iter()
+            .filter(|e| !e.ends_with('/'))
+            .collect();
+        let truncated = snap.truncated || files.len() > limit;
+        if files.len() > limit {
+            files.truncate(limit);
+        }
+        Ok((files, truncated, !rebuilt))
+    }
+
+    pub fn stats(&self) -> (usize, usize) {
+        let Ok(g) = self.inner.lock() else {
+            return (0, 0);
+        };
+        let roots = g.len();
+        let entries = g.values().map(|s| s.entries.len()).sum();
+        (roots, entries)
     }
 
     fn insert(&self, key: String, snap: IndexSnapshot) {
@@ -163,6 +206,11 @@ mod tests {
             .unwrap();
         assert!(!rebuilt);
         assert_eq!(first.entries.len(), second.entries.len());
+        let (files, _, cache_hit) = idx
+            .list_files_deduped(&dir, &limits, Some(100), &CancelToken::new())
+            .unwrap();
+        assert!(cache_hit);
+        assert!(files.iter().any(|f| f.ends_with("a.txt")));
         let _ = fs::remove_dir_all(&dir);
     }
 }

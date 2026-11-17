@@ -11,6 +11,10 @@
   "private": true,
   "scripts": {
     "buildreact": "cd ./src/vs/workbench/contrib/zyntheo/browser/react/ && node build.js && cd ../../../../../../../",
+    "build-zyntheo-sidecar": "bash ./scripts/build-zyntheo-sidecar.sh",
+    "test-zyntheo-sidecar": "bash ./scripts/rust-sidecar-integration.sh",
+    "verify-zyntheo-rust": "bash ./scripts/verify-zyntheo-rust-pass.sh",
+    "bench-zyntheo-sidecar": "bash ./scripts/rust-sidecar-compare-bench.sh",
     "watchreact": "cd ./src/vs/workbench/contrib/zyntheo/browser/react/ && node build.js --watch && cd ../../../../../../../",
     "watchreactd": "deemon npm run watchreact",
     "test": "echo Please run any of the test scripts from the scripts folder.",

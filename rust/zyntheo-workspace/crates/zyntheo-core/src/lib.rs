@@ -1,7 +1,7 @@
 //! Zyntheo core: identity, errors, resource limits, cancellation.
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -144,6 +144,89 @@ impl CancelToken {
     }
 }
 
+/// Bounded concurrency gate for heavy sidecar operations.
+#[derive(Debug)]
+pub struct JobGate {
+    max: usize,
+    active: AtomicUsize,
+}
+
+pub struct JobPermit<'a> {
+    gate: &'a JobGate,
+}
+
+impl JobGate {
+    pub fn new(max: usize) -> Self {
+        Self {
+            max: max.max(1),
+            active: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn active(&self) -> usize {
+        self.active.load(Ordering::SeqCst)
+    }
+
+    pub fn max(&self) -> usize {
+        self.max
+    }
+
+    pub fn try_enter(&self) -> Result<JobPermit<'_>, ZyntheoError> {
+        loop {
+            let cur = self.active.load(Ordering::SeqCst);
+            if cur >= self.max {
+                return Err(ZyntheoError::LimitExceeded(format!(
+                    "max concurrency {}",
+                    self.max
+                )));
+            }
+            if self
+                .active
+                .compare_exchange(cur, cur + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Ok(JobPermit { gate: self });
+            }
+        }
+    }
+}
+
+impl Drop for JobPermit<'_> {
+    fn drop(&mut self) {
+        self.gate.active.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Best-effort RSS for the current process (bytes). Platform-specific; may be `None`.
+pub fn current_rss_bytes() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        // `ru_maxrss` is in bytes on macOS.
+        unsafe {
+            let mut usage: libc::rusage = std::mem::zeroed();
+            if libc::getrusage(libc::RUSAGE_SELF, &mut usage) == 0 {
+                return Some(usage.ru_maxrss as u64);
+            }
+        }
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // `ru_maxrss` is in kilobytes on Linux.
+        unsafe {
+            let mut usage: libc::rusage = std::mem::zeroed();
+            if libc::getrusage(libc::RUSAGE_SELF, &mut usage) == 0 {
+                return Some((usage.ru_maxrss as u64).saturating_mul(1024));
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
 /// Directory names excluded to mirror TypeScript `shouldExcludeDirectory` heuristics.
 pub fn should_exclude_dir_name(name: &str) -> bool {
     if name.starts_with('.') {
@@ -201,5 +284,14 @@ mod tests {
         assert!(should_exclude_dir_name("node_modules"));
         assert!(should_exclude_dir_name(".hidden"));
         assert!(!should_exclude_dir_name("src"));
+    }
+
+    #[test]
+    fn job_gate_bounds_concurrency() {
+        let gate = JobGate::new(1);
+        let p1 = gate.try_enter().unwrap();
+        assert!(gate.try_enter().is_err());
+        drop(p1);
+        assert!(gate.try_enter().is_ok());
     }
 }

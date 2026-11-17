@@ -8,3 +8,4 @@ description = "Shared identity, errors, limits, and cancellation for Zyntheo Rus
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+libc = { workspace = true }

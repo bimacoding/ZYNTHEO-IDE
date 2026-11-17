@@ -27,7 +27,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { IExplorerService } from './files.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
-import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../void/browser/voidSettingsPane.js';
+import { ZYNTHEO_OPEN_SETTINGS_ACTION_ID } from '../../zyntheo/browser/zyntheoSettingsPane.js';
 
 // Contribute Global Actions
 
@@ -677,12 +677,12 @@ for (const menuId of [MenuId.EmptyEditorGroupContext, MenuId.EditorTabsBarContex
 // File menu
 
 
-// Void added this:
+// Zyntheo settings entry in File menu
 MenuRegistry.appendMenuItem(MenuId.MenubarFileMenu, {
-	group: '0_void',
+	group: '0_zyntheo',
 	command: {
-		id: VOID_OPEN_SETTINGS_ACTION_ID,
-		title: nls.localize({ key: 'openVoid', comment: ['&& denotes a mnemonic'] }, "&&Open Void Settings"),
+		id: ZYNTHEO_OPEN_SETTINGS_ACTION_ID,
+		title: nls.localize({ key: 'openZyntheo', comment: ['&& denotes a mnemonic'] }, "&&Open Zyntheo Settings"),
 	},
 	order: 1
 });

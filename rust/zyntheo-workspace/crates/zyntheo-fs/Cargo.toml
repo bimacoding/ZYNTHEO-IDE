@@ -1,0 +1,10 @@
+[package]
+name = "zyntheo-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bounded workspace filesystem traversal for Zyntheo"
+
+[dependencies]
+zyntheo-core = { workspace = true }
+ignore = { workspace = true }

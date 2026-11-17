@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Void - URL Handler
-Comment=Open source AI code editor.
+Name=Zyntheo IDE - URL Handler
+Comment=URL Handler for Zyntheo IDE
 GenericName=Text Editor
-Exec=void --open-url %U
-Icon=void
+Exec=zyntheo --open-url %U
+Icon=zyntheo
 Type=Application
 NoDisplay=true
 StartupNotify=true
-Categories=Utility;TextEditor;Development;IDE;
-MimeType=x-scheme-handler/void;
-Keywords=void;
+Categories=Utility;TextEditor;
+MimeType=x-scheme-handler/zyntheo;
+Keywords=zyntheo;

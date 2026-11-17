@@ -1,0 +1,16 @@
+[package]
+name = "zyntheo-sidecar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Zyntheo Rust sidecar process (stdio IPC)"
+
+[[bin]]
+name = "zyntheo-sidecar"
+path = "src/main.rs"
+
+[dependencies]
+zyntheo-core = { workspace = true }
+zyntheo-ipc = { workspace = true }
+zyntheo-fs = { workspace = true }
+zyntheo-index = { workspace = true }

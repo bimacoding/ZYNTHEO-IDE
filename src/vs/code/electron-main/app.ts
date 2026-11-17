@@ -125,14 +125,14 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
 
 // in theory this is not allowed
 // ignore the eslint errors below
-import { IMetricsService } from '../../workbench/contrib/void/common/metricsService.js';
-import { IVoidUpdateService } from '../../workbench/contrib/void/common/voidUpdateService.js';
-import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
-import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
-import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
-import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
-import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
-import { MCPChannel } from '../../workbench/contrib/void/electron-main/mcpChannel.js';
+import { IMetricsService } from '../../workbench/contrib/zyntheo/common/metricsService.js';
+import { IZyntheoUpdateService } from '../../workbench/contrib/zyntheo/common/zyntheoUpdateService.js';
+import { MetricsMainService } from '../../workbench/contrib/zyntheo/electron-main/metricsMainService.js';
+import { ZyntheoMainUpdateService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoUpdateMainService.js';
+import { LLMMessageChannel } from '../../workbench/contrib/zyntheo/electron-main/sendLLMMessageChannel.js';
+import { ZyntheoSCMService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoSCMMainService.js';
+import { IZyntheoSCMService } from '../../workbench/contrib/zyntheo/common/zyntheoSCMTypes.js';
+import { MCPChannel } from '../../workbench/contrib/zyntheo/electron-main/mcpChannel.js';
 /**
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).
@@ -1103,8 +1103,8 @@ export class CodeApplication extends Disposable {
 
 		// Void main process services (required for services with a channel for comm between browser and electron-main (node))
 		services.set(IMetricsService, new SyncDescriptor(MetricsMainService, undefined, false));
-		services.set(IVoidUpdateService, new SyncDescriptor(VoidMainUpdateService, undefined, false));
-		services.set(IVoidSCMService, new SyncDescriptor(VoidSCMService, undefined, false));
+		services.set(IZyntheoUpdateService, new SyncDescriptor(ZyntheoMainUpdateService, undefined, false));
+		services.set(IZyntheoSCMService, new SyncDescriptor(ZyntheoSCMService, undefined, false));
 
 		// Default Extensions Profile Init
 		services.set(IExtensionsProfileScannerService, new SyncDescriptor(ExtensionsProfileScannerService, undefined, true));
@@ -1238,21 +1238,21 @@ export class CodeApplication extends Disposable {
 
 		// Void - use loggerChannel as reference
 		const metricsChannel = ProxyChannel.fromService(accessor.get(IMetricsService), disposables);
-		mainProcessElectronServer.registerChannel('void-channel-metrics', metricsChannel);
+		mainProcessElectronServer.registerChannel('zyntheo-channel-metrics', metricsChannel);
 
-		const voidUpdatesChannel = ProxyChannel.fromService(accessor.get(IVoidUpdateService), disposables);
-		mainProcessElectronServer.registerChannel('void-channel-update', voidUpdatesChannel);
+		const voidUpdatesChannel = ProxyChannel.fromService(accessor.get(IZyntheoUpdateService), disposables);
+		mainProcessElectronServer.registerChannel('zyntheo-channel-update', voidUpdatesChannel);
 
 		const sendLLMMessageChannel = new LLMMessageChannel(accessor.get(IMetricsService));
-		mainProcessElectronServer.registerChannel('void-channel-llmMessage', sendLLMMessageChannel);
+		mainProcessElectronServer.registerChannel('zyntheo-channel-llmMessage', sendLLMMessageChannel);
 
 		// Void added this
-		const voidSCMChannel = ProxyChannel.fromService(accessor.get(IVoidSCMService), disposables);
-		mainProcessElectronServer.registerChannel('void-channel-scm', voidSCMChannel);
+		const voidSCMChannel = ProxyChannel.fromService(accessor.get(IZyntheoSCMService), disposables);
+		mainProcessElectronServer.registerChannel('zyntheo-channel-scm', voidSCMChannel);
 
 		// Void added this
 		const mcpChannel = new MCPChannel();
-		mainProcessElectronServer.registerChannel('void-channel-mcp', mcpChannel);
+		mainProcessElectronServer.registerChannel('zyntheo-channel-mcp', mcpChannel);
 
 		// Extension Host Debug Broadcasting
 		const electronExtensionHostDebugBroadcastChannel = new ElectronExtensionHostDebugBroadcastChannel(accessor.get(IWindowsMainService));

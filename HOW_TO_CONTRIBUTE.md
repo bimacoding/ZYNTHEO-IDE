@@ -1,28 +1,28 @@
-# Contributing to Void
+# Contributing to Zyntheo IDE
 ### Welcome! 👋
-This is the official guide on how to contribute to Void. We want to make it as easy as possible to contribute, so if you have any questions or comments, reach out via email or discord!
+This is the official guide on how to contribute to Zyntheo. We want to make it as easy as possible to contribute, so if you have any questions or comments, reach out via email or discord!
 
 There are a few ways to contribute:
 
 - 💫 Complete items on the [Roadmap](https://github.com/orgs/voideditor/projects/2).
 - 💡 Make suggestions in our [Discord](https://discord.gg/RSNjgaugJs).
-- 🪴 Start new Issues - see [Issues](https://github.com/voideditor/void/issues).
+- 🪴 Start new Issues - see [Issues](https://github.com/bimacoding/ZYNTHEO-IDE/issues).
 
 
 
 ### Codebase Guide
 
-We [highly recommend reading this](https://github.com/voideditor/void/blob/main/VOID_CODEBASE_GUIDE.md) guide that we put together on Void's sourcecode if you'd like to add new features.
+We [highly recommend reading this](https://github.com/bimacoding/ZYNTHEO-IDE/blob/main/ZYNTHEO_CODEBASE_GUIDE.md) guide that we put together on Void's sourcecode if you'd like to add new features.
 
 The repo is not as intimidating as it first seems if you read the guide!
 
-Most of Void's code lives in the folder `src/vs/workbench/contrib/void/`.
+Most of Zyntheo's code lives in the folder `src/vs/workbench/contrib/zyntheo/`.
 
 
 
-## Editing Void's Code
+## Editing Zyntheo's Code
 
-If you're making changes to Void's code as a contributor, you'll want to run a local version of Void to make sure your changes worked. Developer mode lets you do this. Here's how to use it.
+If you're making changes to Zyntheo's code as a contributor, you'll want to run a local version of Zyntheo to make sure your changes worked. Developer mode lets you do this. Here's how to use it.
 
 ### a. Mac - Prerequisites
 
@@ -54,9 +54,9 @@ First, run `npm install -g node-gyp`. Then:
 
 ### Developer Mode Instructions
 
-Here's how to start changing Void's code. These steps cover everything from cloning Void, to opening a Developer Mode window where you can play around with your updates.
+Here's how to start changing Zyntheo's code. These steps cover everything from cloning Void, to opening a Developer Mode window where you can play around with your updates.
 
-1. `git clone https://github.com/voideditor/void` to clone the repo.
+1. `git clone https://github.com/bimacoding/ZYNTHEO-IDE` to clone the repo.
 2. `npm install` to install all dependencies.
 3. Open Void or VSCode, and initialize Developer Mode (this can take ~5 min to finish, it's done when 2 of the 3 spinners turn to check marks):
    - Windows: Press <kbd>Ctrl+Shift+B</kbd>.
@@ -66,7 +66,7 @@ Here's how to start changing Void's code. These steps cover everything from clon
    - Windows: `./scripts/code.bat`.
    - Mac: `./scripts/code.sh`.
    - Linux: `./scripts/code.sh`.
-5. You're good to start editing Void's code! 
+5. You're good to start editing Zyntheo's code! 
    - You won't see your changes unless you press <kbd>Ctrl+R</kbd> (<kbd>Cmd+R</kbd>) inside the new window to reload. Alternatively, press <kbd>Ctrl+Shift+P</kbd> and `Reload Window`.
    - You might want to add the flags `--user-data-dir ./.tmp/user-data --extensions-dir ./.tmp/extensions` to the command in step 4, which lets you reset any IDE changes you made by deleting the `.tmp` folder.
 	- You can kill any of the build scripts by pressing `Ctrl+D` in its terminal. If you press `Ctrl+C` the script will close but will keep running in the background.
@@ -85,7 +85,7 @@ If you get any errors, scroll down for common fixes.
 - If you get errors like `npm error libtool:   error: unrecognised option: '-static'`,  when running ./scripts/code.sh, make sure you have GNU libtool instead of BSD libtool (BSD is the default in macos)
 - If you get errors like `The SUID sandbox helper binary was found, but is not configured correctly` when running ./scripts/code.sh, run
 `sudo chown root:root .build/electron/chrome-sandbox && sudo chmod 4755 .build/electron/chrome-sandbox` and then run `./scripts/code.sh` again.
-- If you have any other questions, feel free to [submit an issue](https://github.com/voideditor/void/issues/new). You can also refer to VSCode's complete [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute) page.
+- If you have any other questions, feel free to [submit an issue](https://github.com/bimacoding/ZYNTHEO-IDE/issues/new). You can also refer to VSCode's complete [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute) page.
 
 
 
@@ -103,9 +103,9 @@ To build Void from the terminal instead of from inside VSCode, follow the steps 
 
 
 ### Distributing
-Void's maintainers distribute Void on our website and in releases. Our build pipeline is a fork of VSCodium, and it works by running GitHub Actions which create the downloadables. The build repo with more instructions lives [here](https://github.com/voideditor/void-builder).
+Void's maintainers distribute Void on our website and in releases. Our build pipeline is a fork of VSCodium, and it works by running GitHub Actions which create the downloadables. The build repo with more instructions lives [here](https://github.com/bimacoding/ZYNTHEO-IDE-builder).
 
-If you want to completely control Void's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see our [`void-builder`](https://github.com/voideditor/void-builder) repo which builds Void and contains a few important notes about auto-updating and rebasing.
+If you want to completely control Void's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see our [`void-builder`](https://github.com/bimacoding/ZYNTHEO-IDE-builder) repo which builds Void and contains a few important notes about auto-updating and rebasing.
 
 
 #### Building a Local Executible

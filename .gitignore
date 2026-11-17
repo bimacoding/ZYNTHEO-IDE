@@ -22,9 +22,20 @@ product.overrides.json
 *.snap.actual
 .vscode-test
 
-# Void added these:
+# Zyntheo / Void-era local artifacts:
 .tmp/
 .tmp2/
 .tool-versions
 src/vs/workbench/contrib/void/browser/react/out/**
 src/vs/workbench/contrib/void/browser/react/src2/**
+src/vs/workbench/contrib/zyntheo/browser/react/out/**
+src/vs/workbench/contrib/zyntheo/browser/react/src2/**
+rust/zyntheo-workspace/**/target/
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+credentials.json
+secrets/

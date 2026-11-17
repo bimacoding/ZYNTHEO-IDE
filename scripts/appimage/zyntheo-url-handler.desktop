@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Zyntheo IDE - URL Handler
+Comment=URL Handler for Zyntheo IDE
+GenericName=Text Editor
+Exec=zyntheo --open-url %U
+Icon=zyntheo
+Type=Application
+NoDisplay=true
+StartupNotify=true
+Categories=Utility;TextEditor;
+MimeType=x-scheme-handler/zyntheo;
+Keywords=zyntheo;

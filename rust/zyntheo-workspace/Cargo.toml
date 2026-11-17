@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zyntheo-core",
+    "crates/zyntheo-ipc",
+    "crates/zyntheo-fs",
+    "crates/zyntheo-index",
+    "crates/zyntheo-sidecar",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Zyntheo IDE contributors"]
+
+[workspace.dependencies]
+zyntheo-core = { path = "crates/zyntheo-core" }
+zyntheo-ipc = { path = "crates/zyntheo-ipc" }
+zyntheo-fs = { path = "crates/zyntheo-fs" }
+zyntheo-index = { path = "crates/zyntheo-index" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+walkdir = "2.5"
+ignore = "0.4"

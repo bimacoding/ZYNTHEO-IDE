@@ -87,8 +87,8 @@ These dependencies are installed within the Docker container (Ubuntu 20.04 base)
     Copy the following files to the directory where the app binary is being bundled (created during the build process):
 
     *   `create_appimage.sh`
-    *   `void.desktop`
-    *   `void.png`
+    *   `zyntheo.desktop`
+    *   `zyntheo.png`
 
 4.  **Run the Script:**
 
@@ -98,7 +98,7 @@ These dependencies are installed within the Docker container (Ubuntu 20.04 base)
 
 5.  **Result:**
 
-    After the script completes, it will generate an AppImage named `Void-x86_64.AppImage` (or similar, depending on your architecture) in the current directory.
+    After the script completes, it will generate an AppImage named `Zyntheo-x86_64.AppImage` (or similar, depending on your architecture) in the current directory.
 
 ## Script Overview
 
@@ -109,9 +109,9 @@ These dependencies are installed within the Docker container (Ubuntu 20.04 base)
 *   **Dockerfile Creation:** Creates a temporary `Dockerfile.build` for the Ubuntu-based environment.
 *   **Docker Image Build:** Builds a Docker image and runs the build process.
 *   **AppImage Creation:**
-    *   Creates the `VoidApp.AppDir` structure.
+    *   Creates the `ZyntheoApp.AppDir` structure.
     *   Copies binaries, resources, and the `.desktop` entry.
-    *   Copies `void.desktop` and `void.png`.
+    *   Copies `zyntheo.desktop` and `zyntheo.png`.
     *   Strips unnecessary symbols from the binary.
     *   Runs `appimagetool` to generate the AppImage.
 *   **Cleanup:** Removes the temporary `Dockerfile.build`.

@@ -57,8 +57,9 @@ export type ExtensionVirtualWorkspaceSupport = {
 
 export interface IProductConfiguration {
 	readonly version: string;
-	readonly voidVersion?: string;
-	readonly release?: string; // Void - VSCodium added this, we add it for TS
+	readonly zyntheoVersion?: string;
+	readonly zyntheoRelease?: string;
+	readonly release?: string; // VSCodium-compatible release field; also used by Zyntheo
 	readonly date?: string;
 	readonly quality?: string;
 	readonly commit?: string;

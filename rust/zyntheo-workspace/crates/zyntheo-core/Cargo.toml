@@ -1,0 +1,10 @@
+[package]
+name = "zyntheo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared identity, errors, limits, and cancellation for Zyntheo Rust services"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }

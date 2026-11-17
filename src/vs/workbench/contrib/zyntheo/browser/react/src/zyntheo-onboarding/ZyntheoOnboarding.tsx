@@ -61,7 +61,7 @@ const VoidIcon = () => {
 		return () => d.dispose()
 	}, [])
 
-	return <div ref={divRef} className='@@void-void-icon' />
+	return <div ref={divRef} className='@@zyntheo-icon' />
 }
 
 const FADE_DURATION_MS = 2000
@@ -285,7 +285,7 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 // 	OnboardingPage
 // 		title:
 // 			div
-// 				"How would you like to use Void?"
+// 				"How would you like to use Zyntheo?"
 // 		content:
 // 			ModelQuestionContent
 // 				|

@@ -191,7 +191,7 @@ ${telemetryText}
 
 ${restartString}
 
-Void separately records basic usage like the number of messages people are sending. If you'd like to disable Void metrics, you may do so in Void's Settings.
+Zyntheo separately records basic usage like the number of messages people are sending. If you'd like to disable Zyntheo metrics, you may do so in Zyntheo's Settings.
 `;
 
 	return telemetryDescription;

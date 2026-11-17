@@ -9,6 +9,7 @@ import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useFullCha
 import { IconX } from './SidebarChat.js';
 import { Check, Copy, Icon, LoaderCircle, MessageCircleQuestion, Trash2, UserCheck, X } from 'lucide-react';
 import { IsRunningType, ThreadType } from '../../../chatThreadService.js';
+import { displayInfoOfChatMode, normalizeChatMode } from '../../../../common/zyntheoSettingsTypes.js';
 
 
 const numInitialThreads = 3
@@ -218,6 +219,7 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 	}
 
 	const numMessages = pastThread.messages.filter((msg) => msg.role === 'assistant' || msg.role === 'user').length;
+	const threadModeName = displayInfoOfChatMode[normalizeChatMode(pastThread.chatMode)].name
 
 	const detailsHTML = <span
 	// data-tooltip-id='zyntheo-tooltip'
@@ -252,9 +254,12 @@ const PastThreadElement = ({ pastThread, idx, hoveredIdx, setHoveredIdx, isRunni
 				{/* name */}
 				<span className="truncate overflow-hidden text-ellipsis"
 					data-tooltip-id='zyntheo-tooltip'
-					data-tooltip-content={numMessages + ' messages'}
+					data-tooltip-content={`${threadModeName} · ${numMessages} messages`}
 					data-tooltip-place='top'
-				>{firstMsg}</span>
+				>
+					<span className="opacity-60 mr-1">{threadModeName}</span>
+					{firstMsg}
+				</span>
 
 				{/* <span className='opacity-60'>{`(${numMessages})`}</span> */}
 			</span>

@@ -14,7 +14,7 @@ import { ILLMMessageService } from '../common/sendLLMMessageService.js';
 import { chat_userMessageContent, isABuiltinToolName } from '../common/prompt/prompts.js';
 import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
-import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/zyntheoSettingsTypes.js';
+import { ChatMode, FeatureName, ModelSelection, ModelSelectionOptions, normalizeChatMode } from '../common/zyntheoSettingsTypes.js';
 import { IZyntheoSettingsService } from '../common/zyntheoSettingsService.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { IToolsService } from './toolsService.js';
@@ -118,6 +118,7 @@ export type ThreadType = {
 
 	messages: ChatMessage[];
 	filesWithUserChanges: Set<string>;
+	chatMode?: ChatMode;
 
 	// this doesn't need to go in a state object, but feels right
 	state: {
@@ -205,13 +206,14 @@ export type ThreadStreamState = {
 	}
 }
 
-const newThreadObject = () => {
+const newThreadObject = (chatMode?: ChatMode): ThreadType => {
 	const now = new Date().toISOString()
 	return {
 		id: generateUuid(),
 		createdAt: now,
 		lastModified: now,
 		messages: [],
+		chatMode,
 		state: {
 			currCheckpointIdx: null,
 			stagingSelections: [],
@@ -219,7 +221,7 @@ const newThreadObject = () => {
 			linksOfMessageIdx: {},
 		},
 		filesWithUserChanges: new Set()
-	} satisfies ThreadType
+	}
 }
 
 
@@ -237,8 +239,10 @@ export interface IChatThreadService {
 	onDidChangeStreamState: Event<{ threadId: string }>
 
 	getCurrentThread(): ThreadType;
-	openNewThread(): void;
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean }): string;
 	switchToThread(threadId: string): void;
+	getThreadChatMode(threadId: string): ChatMode;
+	setThreadChatMode(threadId: string, chatMode: ChatMode): void;
 
 	// thread selector
 	deleteThread(threadId: string): void;
@@ -280,7 +284,7 @@ export interface IChatThreadService {
 	editUserMessageAndStreamResponse({ userMessage, messageIdx, threadId }: { userMessage: string, messageIdx: number, threadId: string }): Promise<void>;
 
 	// call to add a message
-	addUserMessageAndStreamResponse({ userMessage, threadId }: { userMessage: string, threadId: string }): Promise<void>;
+	addUserMessageAndStreamResponse({ userMessage, threadId, _chatSelections }: { userMessage: string, threadId: string, _chatSelections?: StagingSelectionItem[] }): Promise<void>;
 
 	// approve/reject
 	approveLatestToolRequest(threadId: string): void;
@@ -752,7 +756,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// _runToolCall does not need setStreamState({idle}) before it, but it needs it after it. (handles its own setStreamState)
 
 		// above just defines helpers, below starts the actual function
-		const { chatMode } = this._settingsService.state.globalSettings // should not change as we loop even if user changes it, so it goes here
+		const chatMode = this.getThreadChatMode(threadId) // freeze the mode for this loop even if the user changes the dropdown
 		const { overridesOfModel } = this._settingsService.state
 
 		let nMessagesSent = 0
@@ -1239,6 +1243,10 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return // should never happen
 
+		if (!thread.chatMode) {
+			this.setThreadChatMode(threadId, this.getThreadChatMode(threadId))
+		}
+
 		// interrupt existing stream
 		if (this.streamState[threadId]?.isRunning) {
 			await this.abortRunning(threadId)
@@ -1625,30 +1633,67 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 	switchToThread(threadId: string) {
+		const threadMode = this.state.allThreads[threadId]?.chatMode
+		if (threadMode && this._settingsService.state.globalSettings.chatMode !== threadMode) {
+			this._settingsService.setGlobalSetting('chatMode', threadMode)
+		}
 		this._setState({ currentThreadId: threadId })
 	}
 
+	getThreadChatMode(threadId: string): ChatMode {
+		const threadMode = this.state.allThreads[threadId]?.chatMode
+		if (threadMode) return normalizeChatMode(threadMode)
+		return normalizeChatMode(this._settingsService.state.globalSettings.chatMode)
+	}
 
-	openNewThread() {
-		// if a thread with 0 messages already exists, switch to it
-		const { allThreads: currentThreads } = this.state
-		for (const threadId in currentThreads) {
-			if (currentThreads[threadId]!.messages.length === 0) {
-				// switch to the existing empty thread and exit
-				this.switchToThread(threadId)
-				return
+	setThreadChatMode(threadId: string, chatMode: ChatMode) {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const nextMode = normalizeChatMode(chatMode)
+		const newThreads: ChatThreads = {
+			...this.state.allThreads,
+			[threadId]: {
+				...thread,
+				chatMode: nextMode,
 			}
 		}
-		// otherwise, start a new thread
-		const newThread = newThreadObject()
+		this._storeAllThreads(newThreads)
+		this._setState({ allThreads: newThreads })
+	}
 
-		// update state
+
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean }): string {
+		const switchTo = opts?.switchTo !== false
+		const requestedMode = opts?.chatMode ? normalizeChatMode(opts.chatMode) : undefined
+		const { allThreads: currentThreads } = this.state
+
+		// Reuse an empty thread only when we are switching to it (normal new-chat flow).
+		if (switchTo) {
+			for (const threadId in currentThreads) {
+				const existing = currentThreads[threadId]
+				if (existing && existing.messages.length === 0) {
+					if (requestedMode) this.setThreadChatMode(threadId, requestedMode)
+					this.switchToThread(threadId)
+					return threadId
+				}
+			}
+		}
+
+		const newThread = newThreadObject(requestedMode)
+
 		const newThreads: ChatThreads = {
 			...currentThreads,
 			[newThread.id]: newThread
 		}
 		this._storeAllThreads(newThreads)
-		this._setState({ allThreads: newThreads, currentThreadId: newThread.id })
+		this._setState({
+			allThreads: newThreads,
+			...(switchTo ? { currentThreadId: newThread.id } : {}),
+		})
+		if (switchTo && requestedMode && this._settingsService.state.globalSettings.chatMode !== requestedMode) {
+			this._settingsService.setGlobalSetting('chatMode', requestedMode)
+		}
+		return newThread.id
 	}
 
 

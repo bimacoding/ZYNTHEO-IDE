@@ -4,12 +4,11 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
-import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/zyntheoSettingsTypes.js'
+import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, displayInfoOfFeatureName, isProviderNameDisabled, subTextMdOfProviderName } from '../../../../common/zyntheoSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus } from 'lucide-react'
-import { URI } from '../../../../../../../base/common/uri.js'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cpu, Cloud, SlidersHorizontal, Settings2, Plug, LayoutGrid, Sparkles, LucideIcon } from 'lucide-react'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
 import { WarningBox } from './WarningBox.js'
@@ -18,7 +17,7 @@ import { IconLoading } from '../sidebar-tsx/SidebarChat.js'
 import { ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js'
 import Severity from '../../../../../../../base/common/severity.js'
 import { getModelCapabilities, modelOverrideKeys, ModelOverrides } from '../../../../common/modelCapabilities.js';
-import { TransferEditorType, TransferFilesInfo } from '../../../extensionTransferTypes.js';
+import { TransferEditorType } from '../../../extensionTransferTypes.js';
 import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
@@ -32,6 +31,36 @@ type Tab =
 	| 'mcp'
 	| 'general'
 	| 'all';
+
+const SettingsPageHeader = ({ title, description, action }: { title: string, description?: React.ReactNode, action?: React.ReactNode }) => {
+	return <div className='flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5'>
+		<div className='min-w-0'>
+			<h2 className='text-2xl font-semibold tracking-tight text-zyntheo-fg-1'>{title}</h2>
+			{description ? <div className='text-sm text-zyntheo-fg-3 mt-1 leading-relaxed'>{description}</div> : null}
+		</div>
+		{action ? <div className='shrink-0'>{action}</div> : null}
+	</div>
+}
+
+const SettingsCard = ({ children, className }: { children: React.ReactNode, className?: string }) => {
+	return <div className={`rounded-xl border border-zyntheo-border-2 bg-zyntheo-bg-1/70 overflow-hidden ${className ?? ''}`}>
+		{children}
+	</div>
+}
+
+const SettingsRow = ({ title, description, control }: { title: string, description?: React.ReactNode, control: React.ReactNode }) => {
+	return <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3.5 px-4 border-b border-zyntheo-border-2 last:border-b-0'>
+		<div className='min-w-0'>
+			<div className='text-sm font-medium text-zyntheo-fg-1'>{title}</div>
+			{description ? <div className='text-xs text-zyntheo-fg-3 mt-0.5 leading-relaxed'>{description}</div> : null}
+		</div>
+		<div className='shrink-0 flex items-center gap-2'>{control}</div>
+	</div>
+}
+
+const SettingsActionGrid = ({ children }: { children: React.ReactNode }) => {
+	return <div className='grid grid-cols-1 sm:grid-cols-2 gap-2 p-4'>{children}</div>
+}
 
 
 const ButtonLeftTextRightOption = ({ text, leftButton }: { text: string, leftButton?: React.ReactNode }) => {
@@ -162,7 +191,7 @@ const AddButton = ({ disabled, text = 'Add', ...props }: { disabled?: boolean, t
 
 	return <button
 		disabled={disabled}
-		className={`bg-[#0e70c0] px-3 py-1 text-white rounded-sm ${!disabled ? 'hover:bg-[#1177cb] cursor-pointer' : 'opacity-50 cursor-not-allowed bg-opacity-70'}`}
+		className={`bg-[#0e70c0] px-3 py-1.5 text-white rounded-lg text-sm font-medium ${!disabled ? 'hover:bg-[#1177cb] cursor-pointer' : 'opacity-50 cursor-not-allowed bg-opacity-70'}`}
 		{...props}
 	>{text}</button>
 
@@ -435,7 +464,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 		setErrorString('');
 	};
 
-	return <div className=''>
+	return <div className='rounded-xl border border-zyntheo-border-2 bg-zyntheo-bg-1/70 overflow-hidden'>
 		{modelDump.map((m, i) => {
 			const { isHidden, type, modelName, providerName, providerEnabled } = m
 
@@ -462,13 +491,13 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 			const hasOverrides = !!settingsState.overridesOfModel?.[providerName]?.[modelName]
 
 			return <div key={`${modelName}${providerName}`}
-				className={`flex items-center justify-between gap-4 hover:bg-black/10 dark:hover:bg-gray-300/10 py-1 px-3 rounded-sm overflow-hidden cursor-default truncate group
+				className={`flex items-center justify-between gap-3 hover:bg-black/5 dark:hover:bg-white/5 py-2.5 px-4 overflow-hidden cursor-default group border-b border-zyntheo-border-2 last:border-b-0
 				`}
 			>
 				{/* left part is width:full */}
-				<div className={`flex flex-grow items-center gap-4`}>
-					<span className='w-full max-w-32'>{isNewProviderName ? providerTitle : ''}</span>
-					<span className='w-fit max-w-[400px] truncate'>{modelName}</span>
+				<div className={`flex flex-grow items-center gap-3 min-w-0`}>
+					<span className='w-28 shrink-0 text-xs font-medium text-zyntheo-fg-3 truncate'>{isNewProviderName ? providerTitle : ''}</span>
+					<span className='min-w-0 truncate text-sm text-zyntheo-fg-1'>{modelName}</span>
 				</div>
 
 				{/* right part is anything that fits */}
@@ -523,12 +552,12 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 
 		{/* Add Model Section */}
 		{showCheckmark ? (
-			<div className="mt-4">
-				<AnimatedCheckmarkButton text='Added' className="bg-[#0e70c0] text-white px-3 py-1 rounded-sm" />
+			<div className="p-4 border-t border-zyntheo-border-2">
+				<AnimatedCheckmarkButton text='Added' className="bg-[#0e70c0] text-white px-3 py-1 rounded-lg" />
 			</div>
 		) : isAddModelOpen ? (
-			<div className="mt-4">
-				<form className="flex items-center gap-2">
+			<div className="p-4 border-t border-zyntheo-border-2">
+				<form className="flex flex-wrap items-center gap-2">
 
 					{/* Provider dropdown */}
 					<ErrorBoundary>
@@ -586,15 +615,14 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 				)}
 			</div>
 		) : (
-			<div
-				className="text-zyntheo-fg-4 flex flex-nowrap text-nowrap items-center hover:brightness-110 cursor-pointer mt-4"
+			<button
+				type="button"
+				className="w-full text-zyntheo-fg-3 flex items-center gap-2 hover:text-zyntheo-fg-1 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer px-4 py-3 text-sm border-t border-zyntheo-border-2"
 				onClick={() => setIsAddModelOpen(true)}
 			>
-				<div className="flex items-center gap-1">
-					<Plus size={16} />
-					<span>Add a model</span>
-				</div>
-			</div>
+				<Plus size={16} />
+				<span>Add a model</span>
+			</button>
 		)}
 
 		{/* Model Settings Dialog */}
@@ -704,10 +732,10 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
 
-	return <div>
+	return <SettingsCard className='mb-3'>
 
-		<div className='flex items-center w-full gap-4'>
-			{showProviderTitle && <h3 className='text-xl truncate'>{providerTitle}</h3>}
+		<div className='flex items-center w-full gap-4 px-4 pt-4 pb-2'>
+			{showProviderTitle && <h3 className='text-base font-semibold truncate'>{providerTitle}</h3>}
 
 			{/* enable provider switch */}
 			{/* <VoidSwitch
@@ -721,7 +749,7 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 			/> */}
 		</div>
 
-		<div className='px-0'>
+		<div className='px-4 pb-4'>
 			{/* settings besides models (e.g. api key) */}
 			{settingNames.map((settingName, i) => {
 
@@ -740,7 +768,7 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 					: <WarningBox className="pl-2 mb-4" text={`Please add a model for ${providerTitle} (Models section).`} />
 				: null}
 		</div>
-	</div >
+	</SettingsCard>
 }
 
 
@@ -786,7 +814,7 @@ export const AIInstructionsBox = () => {
 	const zyntheoSettingsService = accessor.get('IZyntheoSettingsService')
 	const voidSettingsState = useSettingsState()
 	return <VoidInputBox2
-		className='min-h-[81px] p-3 rounded-sm'
+		className='min-h-[120px] p-3 rounded-xl border border-zyntheo-border-2 bg-zyntheo-bg-1'
 		initValue={voidSettingsState.globalSettings.aiInstructions}
 		placeholder={`Do not change my indentation or delete my comments. When writing TS or JS, do not add ;'s. Write new code using Rust if possible. `}
 		multiline
@@ -839,12 +867,14 @@ export const OllamaSetupInstructions = ({ sayWeAutoDetect }: { sayWeAutoDetect?:
 const RedoOnboardingButton = ({ className }: { className?: string }) => {
 	const accessor = useAccessor()
 	const zyntheoSettingsService = accessor.get('IZyntheoSettingsService')
-	return <div
-		className={`text-zyntheo-fg-4 flex flex-nowrap text-nowrap items-center hover:brightness-110 cursor-pointer ${className}`}
+	return <button
+		type='button'
+		className={`text-xs text-zyntheo-fg-3 hover:text-zyntheo-fg-1 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zyntheo-border-2 bg-zyntheo-bg-1 hover:bg-zyntheo-bg-2 transition-colors ${className ?? ''}`}
 		onClick={() => { zyntheoSettingsService.setGlobalSetting('isOnboardingComplete', false) }}
 	>
-		See onboarding screen?
-	</div>
+		<Sparkles size={13} />
+		See onboarding screen
+	</button>
 
 }
 
@@ -874,7 +904,7 @@ export const ToolApprovalTypeSwitch = ({ approvalType, size, desc }: { approvalT
 			value={voidSettingsState.globalSettings.autoApprove[approvalType] ?? false}
 			onChange={(newVal) => onToggleAutoApprove(approvalType, newVal)}
 		/>
-		<span className="text-zyntheo-fg-3 text-xs">{desc}</span>
+		{desc ? <span className="text-zyntheo-fg-3 text-xs">{desc}</span> : null}
 	</>
 }
 
@@ -907,7 +937,7 @@ export const OneClickSwitchButton = ({ fromEditor = 'VS Code', className = '' }:
 	}
 
 	return <>
-		<VoidButtonBgDarken className={`max-w-48 p-4 ${className}`} disabled={transferState.type !== 'done'} onClick={onClick}>
+		<VoidButtonBgDarken className={`w-full p-3 rounded-lg ${className}`} disabled={transferState.type !== 'done'} onClick={onClick}>
 			{transferState.type === 'done' ? `Transfer from ${fromEditor}`
 				: transferState.type === 'loading' ? <span className='text-nowrap flex flex-nowrap'>Transferring<IconLoading /></span>
 					: transferState.type === 'justfinished' ? <AnimatedCheckmarkButton text='Settings Transferred' className='bg-none' />
@@ -932,7 +962,7 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 	const removeUniquePrefix = (name: string) => name.split('_').slice(1).join('_')
 
 	return (
-		<div className="border border-zyntheo-border-2 bg-zyntheo-bg-1 py-3 px-4 rounded-sm my-2">
+		<div className="border border-zyntheo-border-2 bg-zyntheo-bg-1 py-3 px-4 rounded-xl my-2">
 			<div className="flex items-center justify-between">
 				{/* Left side - status and name */}
 				<div className="flex items-center gap-2">
@@ -1035,14 +1065,14 @@ export const Settings = () => {
 	const [selectedSection, setSelectedSection] =
 		useState<Tab>('models');
 
-	const navItems: { tab: Tab; label: string }[] = [
-		{ tab: 'models', label: 'Models' },
-		{ tab: 'localProviders', label: 'Local Providers' },
-		{ tab: 'providers', label: 'Main Providers' },
-		{ tab: 'featureOptions', label: 'Feature Options' },
-		{ tab: 'general', label: 'General' },
-		{ tab: 'mcp', label: 'MCP' },
-		{ tab: 'all', label: 'All Settings' },
+	const navItems: { tab: Tab; label: string; icon: LucideIcon }[] = [
+		{ tab: 'models', label: 'Models', icon: Boxes },
+		{ tab: 'localProviders', label: 'Local Providers', icon: Cpu },
+		{ tab: 'providers', label: 'Main Providers', icon: Cloud },
+		{ tab: 'featureOptions', label: 'Feature Options', icon: SlidersHorizontal },
+		{ tab: 'general', label: 'General', icon: Settings2 },
+		{ tab: 'mcp', label: 'MCP', icon: Plug },
+		{ tab: 'all', label: 'All Settings', icon: LayoutGrid },
 	];
 	const shouldShowTab = (tab: Tab) => selectedSection === 'all' || selectedSection === tab;
 	const accessor = useAccessor()
@@ -1124,77 +1154,82 @@ export const Settings = () => {
 
 	return (
 		<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ height: '100%', width: '100%', overflow: 'auto' }}>
-			<div className="flex flex-col md:flex-row w-full gap-6 max-w-[900px] mx-auto mb-32" style={{ minHeight: '80vh' }}>
+			<div className="flex flex-col lg:flex-row w-full max-w-[1100px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 gap-6 lg:gap-10 mb-24">
 				{/* ──────────────  SIDEBAR  ────────────── */}
 
-				<aside className="md:w-1/4 w-full p-6 shrink-0">
-					{/* vertical tab list */}
-					<div className="flex flex-col gap-2 mt-12">
-						{navItems.map(({ tab, label }) => (
-							<button
-								key={tab}
-								onClick={() => {
-									if (tab === 'all') {
-										setSelectedSection('all');
-										window.scrollTo({ top: 0, behavior: 'smooth' });
-									} else {
-										setSelectedSection(tab);
-									}
-								}}
-								className={`
-          py-2 px-4 rounded-md text-left transition-all duration-200
-          ${selectedSection === tab
-										? 'bg-[#0e70c0]/80 text-white font-medium shadow-sm'
-										: 'bg-zyntheo-bg-2 hover:bg-zyntheo-bg-2/80 text-zyntheo-fg-1'}
-        `}
-							>
-								{label}
-							</button>
-						))}
+				<aside className="lg:w-56 w-full shrink-0 lg:sticky lg:top-6 lg:self-start">
+					<div className="mb-4 hidden lg:block">
+						<div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zyntheo-fg-3">Settings</div>
 					</div>
+					<nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0 -mx-1 px-1">
+						{navItems.map(({ tab, label, icon: Icon }) => {
+							const isActive = selectedSection === tab
+							return (
+								<button
+									key={tab}
+									onClick={() => {
+										if (tab === 'all') {
+											setSelectedSection('all');
+											window.scrollTo({ top: 0, behavior: 'smooth' });
+										} else {
+											setSelectedSection(tab);
+										}
+									}}
+									className={`flex items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm text-left transition-colors duration-150
+										${isActive
+											? 'bg-[#0e70c0] text-white font-medium shadow-sm'
+											: 'text-zyntheo-fg-2 hover:bg-zyntheo-bg-2 hover:text-zyntheo-fg-1'}
+									`}
+								>
+									<Icon size={16} className='shrink-0 opacity-90' />
+									<span>{label}</span>
+								</button>
+							)
+						})}
+					</nav>
 				</aside>
 
 				{/* ───────────── MAIN PANE ───────────── */}
-				<main className="flex-1 p-6 select-none">
-
-
-
+				<main className="flex-1 min-w-0 select-none">
 					<div className='max-w-3xl'>
+						<div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8'>
+							<div>
+								<h1 className='text-2xl font-semibold tracking-tight text-zyntheo-fg-1'>{`Zyntheo's Settings`}</h1>
+								<p className='text-sm text-zyntheo-fg-3 mt-1'>Configure models, providers, and editor behavior.</p>
+							</div>
+							<ErrorBoundary>
+								<RedoOnboardingButton />
+							</ErrorBoundary>
+						</div>
 
-						<h1 className='text-2xl w-full'>{`Zyntheo's Settings`}</h1>
-
-						<div className='w-full h-[1px] my-2' />
-
-						{/* Models section (formerly FeaturesTab) */}
-						<ErrorBoundary>
-							<RedoOnboardingButton />
-						</ErrorBoundary>
-
-						<div className='w-full h-[1px] my-4' />
-
-						{/* All sections in flex container with gap-12 */}
-						<div className='flex flex-col gap-12'>
+						<div className='flex flex-col gap-10'>
 							{/* Models section (formerly FeaturesTab) */}
 							<div className={shouldShowTab('models') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Models</h2>
+									<SettingsPageHeader
+										title='Models'
+										description='Choose which models appear in chat and other features.'
+									/>
 									<ModelDump />
-									<div className='w-full h-[1px] my-4' />
-									<AutoDetectLocalModelsToggle />
-									<RefreshableModels />
+									<div className='mt-4 rounded-xl border border-zyntheo-border-2 bg-zyntheo-bg-1/70 py-2'>
+										<AutoDetectLocalModelsToggle />
+										<RefreshableModels />
+									</div>
 								</ErrorBoundary>
 							</div>
 
 							{/* Local Providers section */}
 							<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Local Providers</h2>
-									<h3 className={`text-zyntheo-fg-3 mb-2`}>{`Zyntheo can access any model that you host locally. We automatically detect your local models by default.`}</h3>
-
-									<div className='opacity-80 mb-4'>
-										<OllamaSetupInstructions sayWeAutoDetect={true} />
-									</div>
-
+									<SettingsPageHeader
+										title='Local Providers'
+										description='Zyntheo can access any model that you host locally. We automatically detect your local models by default.'
+									/>
+									<SettingsCard className='mb-4'>
+										<div className='p-4 opacity-90'>
+											<OllamaSetupInstructions sayWeAutoDetect={true} />
+										</div>
+									</SettingsCard>
 									<ZyntheoProviderSettings providerNames={localProviderNames} />
 								</ErrorBoundary>
 							</div>
@@ -1202,9 +1237,10 @@ export const Settings = () => {
 							{/* Main Providers section */}
 							<div className={shouldShowTab('providers') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Main Providers</h2>
-									<h3 className={`text-zyntheo-fg-3 mb-2`}>{`Zyntheo can access models from Anthropic, OpenAI, OpenRouter, and more.`}</h3>
-
+									<SettingsPageHeader
+										title='Main Providers'
+										description='Zyntheo can access models from Anthropic, OpenAI, OpenRouter, and more.'
+									/>
 									<ZyntheoProviderSettings providerNames={nonlocalProviderNames} />
 								</ErrorBoundary>
 							</div>
@@ -1212,349 +1248,321 @@ export const Settings = () => {
 							{/* Feature Options section */}
 							<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Feature Options</h2>
+									<SettingsPageHeader
+										title='Feature Options'
+										description='Tune autocomplete, apply, tools, and editor suggestions.'
+									/>
 
-									<div className='flex flex-col gap-y-8 my-4'>
+									<div className='flex flex-col gap-4'>
 										<ErrorBoundary>
-											{/* FIM */}
-											<div>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('Autocomplete')}</h4>
-												<div className='text-sm text-zyntheo-fg-3 mt-1'>
-													<span>
-														Experimental.{' '}
-													</span>
-													<span
-														className='hover:brightness-110'
-														data-tooltip-id='zyntheo-tooltip'
-														data-tooltip-content='We recommend using the largest qwen2.5-coder model you can with Ollama (try qwen2.5-coder:3b).'
-														data-tooltip-class-name='zyntheo-max-w-[20px]'
-													>
-														Only works with FIM models.*
-													</span>
-												</div>
-
-												<div className='my-2'>
-													{/* Enable Switch */}
-													<ErrorBoundary>
-														<div className='flex items-center gap-x-2 my-2'>
+											<SettingsCard>
+												<SettingsRow
+													title={displayInfoOfFeatureName('Autocomplete')}
+													description={
+														<span>
+															Experimental.{' '}
+															<span
+																className='hover:brightness-110'
+																data-tooltip-id='zyntheo-tooltip'
+																data-tooltip-content='We recommend using the largest qwen2.5-coder model you can with Ollama (try qwen2.5-coder:3b).'
+																data-tooltip-class-name='zyntheo-max-w-[20px]'
+															>
+																Only works with FIM models.*
+															</span>
+														</span>
+													}
+													control={
+														<div className='flex items-center gap-2'>
+															<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.enableAutocomplete ? 'Enabled' : 'Disabled'}</span>
 															<VoidSwitch
 																size='xs'
 																value={settingsState.globalSettings.enableAutocomplete}
 																onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('enableAutocomplete', newVal)}
 															/>
-															<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.enableAutocomplete ? 'Enabled' : 'Disabled'}</span>
 														</div>
-													</ErrorBoundary>
-
-													{/* Model Dropdown */}
-													<ErrorBoundary>
-														<div className={`my-2 ${!settingsState.globalSettings.enableAutocomplete ? 'hidden' : ''}`}>
-															<ModelDropdown featureName={'Autocomplete'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded p-0.5 px-1' />
-														</div>
-													</ErrorBoundary>
-
-												</div>
-
-											</div>
+													}
+												/>
+												{settingsState.globalSettings.enableAutocomplete ? (
+													<div className='px-4 pb-4'>
+														<ModelDropdown featureName={'Autocomplete'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded-lg p-0.5 px-1' />
+													</div>
+												) : null}
+											</SettingsCard>
 										</ErrorBoundary>
 
-										{/* Apply */}
 										<ErrorBoundary>
-
-											<div className='w-full'>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('Apply')}</h4>
-												<div className='text-sm text-zyntheo-fg-3 mt-1'>Settings that control the behavior of the Apply button.</div>
-
-												<div className='my-2'>
-													{/* Sync to Chat Switch */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.syncApplyToChat}
-															onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('syncApplyToChat', newVal)}
-														/>
-														<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncApplyToChat ? 'Same as Chat model' : 'Different model'}</span>
+											<SettingsCard>
+												<SettingsRow
+													title={displayInfoOfFeatureName('Apply')}
+													description='Settings that control the behavior of the Apply button.'
+													control={
+														<div className='flex items-center gap-2'>
+															<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncApplyToChat ? 'Same as Chat model' : 'Different model'}</span>
+															<VoidSwitch
+																size='xs'
+																value={settingsState.globalSettings.syncApplyToChat}
+																onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('syncApplyToChat', newVal)}
+															/>
+														</div>
+													}
+												/>
+												{!settingsState.globalSettings.syncApplyToChat ? (
+													<div className='px-4 pb-3'>
+														<ModelDropdown featureName={'Apply'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded-lg p-0.5 px-1' />
 													</div>
-
-													{/* Model Dropdown */}
-													<div className={`my-2 ${settingsState.globalSettings.syncApplyToChat ? 'hidden' : ''}`}>
-														<ModelDropdown featureName={'Apply'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded p-0.5 px-1' />
-													</div>
+												) : null}
+												<div className='px-4 pb-4'>
+													<FastApplyMethodDropdown />
 												</div>
-
-
-												<div className='my-2'>
-													{/* Fast Apply Method Dropdown */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<FastApplyMethodDropdown />
-													</div>
-												</div>
-
-											</div>
+											</SettingsCard>
 										</ErrorBoundary>
 
-
-
-
-										{/* Tools Section */}
-										<div>
-											<h4 className={`text-base`}>Tools</h4>
-											<div className='text-sm text-zyntheo-fg-3 mt-1'>{`Tools are functions that LLMs can call. Some tools require user approval.`}</div>
-
-											<div className='my-2'>
-												{/* Auto Accept Switch */}
-												<ErrorBoundary>
-													{[...toolApprovalTypes].map((approvalType) => {
-														return <div key={approvalType} className="flex items-center gap-x-2 my-2">
-															<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc={`Auto-approve ${approvalType}`} />
-														</div>
-													})}
-
-												</ErrorBoundary>
-
-												{/* Tool Lint Errors Switch */}
-												<ErrorBoundary>
-
-													<div className='flex items-center gap-x-2 my-2'>
+										<SettingsCard>
+											<div className='px-4 pt-4 pb-1'>
+												<div className='text-sm font-medium text-zyntheo-fg-1'>Tools</div>
+												<div className='text-xs text-zyntheo-fg-3 mt-0.5'>Tools are functions that LLMs can call. Some tools require user approval.</div>
+											</div>
+											<ErrorBoundary>
+												{[...toolApprovalTypes].map((approvalType) => (
+													<SettingsRow
+														key={approvalType}
+														title={`Auto-approve ${approvalType}`}
+														control={<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc='' />}
+													/>
+												))}
+											</ErrorBoundary>
+											<ErrorBoundary>
+												<SettingsRow
+													title='Fix lint errors'
+													control={
 														<VoidSwitch
 															size='xs'
 															value={settingsState.globalSettings.includeToolLintErrors}
 															onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('includeToolLintErrors', newVal)}
 														/>
-														<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.includeToolLintErrors ? 'Fix lint errors' : `Fix lint errors`}</span>
-													</div>
-												</ErrorBoundary>
-
-												{/* Auto Accept LLM Changes Switch */}
-												<ErrorBoundary>
-													<div className='flex items-center gap-x-2 my-2'>
+													}
+												/>
+											</ErrorBoundary>
+											<ErrorBoundary>
+												<SettingsRow
+													title='Auto-accept LLM changes'
+													control={
 														<VoidSwitch
 															size='xs'
 															value={settingsState.globalSettings.autoAcceptLLMChanges}
 															onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('autoAcceptLLMChanges', newVal)}
 														/>
-														<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>Auto-accept LLM changes</span>
-													</div>
-												</ErrorBoundary>
-											</div>
-										</div>
+													}
+												/>
+											</ErrorBoundary>
+										</SettingsCard>
 
+										<SettingsCard>
+											<ErrorBoundary>
+												<SettingsRow
+													title='Editor'
+													description='Settings that control the visibility of Zyntheo suggestions in the code editor.'
+													control={
+														<div className='flex items-center gap-2'>
+															<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>Show suggestions on select</span>
+															<VoidSwitch
+																size='xs'
+																value={settingsState.globalSettings.showInlineSuggestions}
+																onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('showInlineSuggestions', newVal)}
+															/>
+														</div>
+													}
+												/>
+											</ErrorBoundary>
+										</SettingsCard>
 
-
-										<div className='w-full'>
-											<h4 className={`text-base`}>Editor</h4>
-											<div className='text-sm text-zyntheo-fg-3 mt-1'>{`Settings that control the visibility of Zyntheo suggestions in the code editor.`}</div>
-
-											<div className='my-2'>
-												{/* Auto Accept Switch */}
-												<ErrorBoundary>
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.showInlineSuggestions}
-															onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('showInlineSuggestions', newVal)}
-														/>
-														<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.showInlineSuggestions ? 'Show suggestions on select' : 'Show suggestions on select'}</span>
-													</div>
-												</ErrorBoundary>
-											</div>
-										</div>
-
-										{/* SCM */}
 										<ErrorBoundary>
-
-											<div className='w-full'>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('SCM')}</h4>
-												<div className='text-sm text-zyntheo-fg-3 mt-1'>Settings that control the behavior of the commit message generator.</div>
-
-												<div className='my-2'>
-													{/* Sync to Chat Switch */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.syncSCMToChat}
-															onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('syncSCMToChat', newVal)}
-														/>
-														<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncSCMToChat ? 'Same as Chat model' : 'Different model'}</span>
+											<SettingsCard>
+												<SettingsRow
+													title={displayInfoOfFeatureName('SCM')}
+													description='Settings that control the behavior of the commit message generator.'
+													control={
+														<div className='flex items-center gap-2'>
+															<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncSCMToChat ? 'Same as Chat model' : 'Different model'}</span>
+															<VoidSwitch
+																size='xs'
+																value={settingsState.globalSettings.syncSCMToChat}
+																onChange={(newVal) => zyntheoSettingsService.setGlobalSetting('syncSCMToChat', newVal)}
+															/>
+														</div>
+													}
+												/>
+												{!settingsState.globalSettings.syncSCMToChat ? (
+													<div className='px-4 pb-4'>
+														<ModelDropdown featureName={'SCM'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded-lg p-0.5 px-1' />
 													</div>
-
-													{/* Model Dropdown */}
-													<div className={`my-2 ${settingsState.globalSettings.syncSCMToChat ? 'hidden' : ''}`}>
-														<ModelDropdown featureName={'SCM'} className='text-xs text-zyntheo-fg-3 bg-zyntheo-bg-1 border border-zyntheo-border-1 rounded p-0.5 px-1' />
-													</div>
-												</div>
-
-											</div>
+												) : null}
+											</SettingsCard>
 										</ErrorBoundary>
 									</div>
 								</ErrorBoundary>
 							</div>
 
 							{/* General section */}
-							<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-12`}>
-								{/* One-Click Switch section */}
+							<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-8`}>
 								<div>
 									<ErrorBoundary>
-										<h2 className='text-3xl mb-2'>One-Click Switch</h2>
-										<h4 className='text-zyntheo-fg-3 mb-4'>{`Transfer your editor settings into Zyntheo.`}</h4>
-
-										<div className='flex flex-col gap-2'>
-											<OneClickSwitchButton className='w-48' fromEditor="VS Code" />
-											<OneClickSwitchButton className='w-48' fromEditor="Cursor" />
-											<OneClickSwitchButton className='w-48' fromEditor="Windsurf" />
-										</div>
+										<SettingsPageHeader
+											title='One-Click Switch'
+											description='Transfer your editor settings into Zyntheo.'
+										/>
+										<SettingsCard>
+											<SettingsActionGrid>
+												<OneClickSwitchButton className='w-full' fromEditor="VS Code" />
+												<OneClickSwitchButton className='w-full' fromEditor="Cursor" />
+												<OneClickSwitchButton className='w-full' fromEditor="Windsurf" />
+											</SettingsActionGrid>
+										</SettingsCard>
 									</ErrorBoundary>
 								</div>
 
-								{/* Import/Export section */}
 								<div>
-									<h2 className='text-3xl mb-2'>Import/Export</h2>
-									<h4 className='text-zyntheo-fg-3 mb-4'>{`Transfer Zyntheo's settings and chats in and out of Zyntheo.`}</h4>
-									<div className='flex flex-col gap-8'>
-										{/* Settings Subcategory */}
-										<div className='flex flex-col gap-2 max-w-48 w-full'>
-											<input key={2 * s} ref={fileInputSettingsRef} type='file' accept='.json' className='hidden' onChange={handleUpload('Settings')} />
-											<VoidButtonBgDarken className='px-4 py-1 w-full' onClick={() => { fileInputSettingsRef.current?.click() }}>
-												Import Settings
-											</VoidButtonBgDarken>
-											<VoidButtonBgDarken className='px-4 py-1 w-full' onClick={() => onDownload('Settings')}>
-												Export Settings
-											</VoidButtonBgDarken>
-											<ConfirmButton className='px-4 py-1 w-full' onConfirm={() => { zyntheoSettingsService.resetState(); }}>
-												Reset Settings
-											</ConfirmButton>
-										</div>
-
-										{/* Chats Subcategory */}
-										<div className='flex flex-col gap-2 max-w-48 w-full'>
-											<input key={2 * s + 1} ref={fileInputChatsRef} type='file' accept='.json' className='hidden' onChange={handleUpload('Chats')} />
-											<VoidButtonBgDarken className='px-4 py-1 w-full' onClick={() => { fileInputChatsRef.current?.click() }}>
-												Import Chats
-											</VoidButtonBgDarken>
-											<VoidButtonBgDarken className='px-4 py-1 w-full' onClick={() => onDownload('Chats')}>
-												Export Chats
-											</VoidButtonBgDarken>
-											<ConfirmButton className='px-4 py-1 w-full' onConfirm={() => { chatThreadsService.resetState(); }}>
-												Reset Chats
-											</ConfirmButton>
-										</div>
-									</div>
-								</div>
-
-
-
-								{/* Built-in Settings section */}
-								<div>
-									<h2 className={`text-3xl mb-2`}>Built-in Settings</h2>
-									<h4 className={`text-zyntheo-fg-3 mb-4`}>{`IDE settings, keyboard settings, and theme customization.`}</h4>
-
-									<ErrorBoundary>
-										<div className='flex flex-col gap-2 justify-center max-w-48 w-full'>
-											<VoidButtonBgDarken className='px-4 py-1' onClick={() => { commandService.executeCommand('workbench.action.openSettings') }}>
-												General Settings
-											</VoidButtonBgDarken>
-											<VoidButtonBgDarken className='px-4 py-1' onClick={() => { commandService.executeCommand('workbench.action.openGlobalKeybindings') }}>
-												Keyboard Settings
-											</VoidButtonBgDarken>
-											<VoidButtonBgDarken className='px-4 py-1' onClick={() => { commandService.executeCommand('workbench.action.selectTheme') }}>
-												Theme Settings
-											</VoidButtonBgDarken>
-											<VoidButtonBgDarken className='px-4 py-1' onClick={() => { nativeHostService.showItemInFolder(environmentService.logsHome.fsPath) }}>
-												Open Logs
-											</VoidButtonBgDarken>
-										</div>
-									</ErrorBoundary>
-								</div>
-
-
-								{/* Metrics section */}
-								<div className='max-w-[600px]'>
-									<h2 className={`text-3xl mb-2`}>Metrics</h2>
-									<h4 className={`text-zyntheo-fg-3 mb-4`}>Very basic anonymous usage tracking helps us keep Zyntheo running smoothly. You may opt out below. Regardless of this setting, Zyntheo never sees your code, messages, or API keys.</h4>
-
-									<div className='my-2'>
-										{/* Disable All Metrics Switch */}
-										<ErrorBoundary>
-											<div className='flex items-center gap-x-2 my-2'>
-												<VoidSwitch
-													size='xs'
-													value={isOptedOut}
-													onChange={(newVal) => {
-														storageService.store(OPT_OUT_KEY, newVal, StorageScope.APPLICATION, StorageTarget.MACHINE)
-														metricsService.capture(`Set metrics opt-out to ${newVal}`, {}) // this only fires if it's enabled, so it's fine to have here
-													}}
-												/>
-												<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>{'Opt-out (requires restart)'}</span>
+									<SettingsPageHeader
+										title='Import / Export'
+										description={`Transfer Zyntheo's settings and chats in and out of Zyntheo.`}
+									/>
+									<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
+										<SettingsCard>
+											<div className='px-4 pt-4 pb-2 text-sm font-medium text-zyntheo-fg-1'>Settings</div>
+											<div className='flex flex-col gap-2 p-4 pt-0'>
+												<input key={2 * s} ref={fileInputSettingsRef} type='file' accept='.json' className='hidden' onChange={handleUpload('Settings')} />
+												<VoidButtonBgDarken className='px-4 py-1.5 w-full rounded-lg' onClick={() => { fileInputSettingsRef.current?.click() }}>
+													Import Settings
+												</VoidButtonBgDarken>
+												<VoidButtonBgDarken className='px-4 py-1.5 w-full rounded-lg' onClick={() => onDownload('Settings')}>
+													Export Settings
+												</VoidButtonBgDarken>
+												<ConfirmButton className='px-4 py-1.5 w-full rounded-lg' onConfirm={() => { zyntheoSettingsService.resetState(); }}>
+													Reset Settings
+												</ConfirmButton>
 											</div>
-										</ErrorBoundary>
-									</div>
-								</div>
-
-								{/* AI Instructions section */}
-								<div className='max-w-[600px]'>
-									<h2 className={`text-3xl mb-2`}>AI Instructions</h2>
-									<h4 className={`text-zyntheo-fg-3 mb-4`}>
-										<ChatMarkdownRender inPTag={true} string={`
-System instructions to include with all AI requests.
-Alternatively, place a \`.voidrules\` file in the root of your workspace.
-								`} chatMessageLocation={undefined} />
-									</h4>
-									<ErrorBoundary>
-										<AIInstructionsBox />
-									</ErrorBoundary>
-									{/* --- Disable System Message Toggle --- */}
-									<div className='my-4'>
-										<ErrorBoundary>
-											<div className='flex items-center gap-x-2'>
-												<VoidSwitch
-													size='xs'
-													value={!!settingsState.globalSettings.disableSystemMessage}
-													onChange={(newValue) => {
-														zyntheoSettingsService.setGlobalSetting('disableSystemMessage', newValue);
-													}}
-												/>
-												<span className='text-zyntheo-fg-3 text-xs pointer-events-none'>
-													{'Disable system message'}
-												</span>
+										</SettingsCard>
+										<SettingsCard>
+											<div className='px-4 pt-4 pb-2 text-sm font-medium text-zyntheo-fg-1'>Chats</div>
+											<div className='flex flex-col gap-2 p-4 pt-0'>
+												<input key={2 * s + 1} ref={fileInputChatsRef} type='file' accept='.json' className='hidden' onChange={handleUpload('Chats')} />
+												<VoidButtonBgDarken className='px-4 py-1.5 w-full rounded-lg' onClick={() => { fileInputChatsRef.current?.click() }}>
+													Import Chats
+												</VoidButtonBgDarken>
+												<VoidButtonBgDarken className='px-4 py-1.5 w-full rounded-lg' onClick={() => onDownload('Chats')}>
+													Export Chats
+												</VoidButtonBgDarken>
+												<ConfirmButton className='px-4 py-1.5 w-full rounded-lg' onConfirm={() => { chatThreadsService.resetState(); }}>
+													Reset Chats
+												</ConfirmButton>
 											</div>
-										</ErrorBoundary>
-										<div className='text-zyntheo-fg-3 text-xs mt-1'>
-											{`When disabled, Zyntheo will not include anything in the system message except for content you specified above.`}
-										</div>
+										</SettingsCard>
 									</div>
 								</div>
 
+								<div>
+									<SettingsPageHeader
+										title='Built-in Settings'
+										description='IDE settings, keyboard settings, and theme customization.'
+									/>
+									<ErrorBoundary>
+										<SettingsCard>
+											<SettingsActionGrid>
+												<VoidButtonBgDarken className='px-4 py-1.5 rounded-lg' onClick={() => { commandService.executeCommand('workbench.action.openSettings') }}>
+													General Settings
+												</VoidButtonBgDarken>
+												<VoidButtonBgDarken className='px-4 py-1.5 rounded-lg' onClick={() => { commandService.executeCommand('workbench.action.openGlobalKeybindings') }}>
+													Keyboard Settings
+												</VoidButtonBgDarken>
+												<VoidButtonBgDarken className='px-4 py-1.5 rounded-lg' onClick={() => { commandService.executeCommand('workbench.action.selectTheme') }}>
+													Theme Settings
+												</VoidButtonBgDarken>
+												<VoidButtonBgDarken className='px-4 py-1.5 rounded-lg' onClick={() => { nativeHostService.showItemInFolder(environmentService.logsHome.fsPath) }}>
+													Open Logs
+												</VoidButtonBgDarken>
+											</SettingsActionGrid>
+										</SettingsCard>
+									</ErrorBoundary>
+								</div>
+
+								<div>
+									<SettingsPageHeader
+										title='Metrics'
+										description='Very basic anonymous usage tracking helps us keep Zyntheo running smoothly. You may opt out below. Regardless of this setting, Zyntheo never sees your code, messages, or API keys.'
+									/>
+									<SettingsCard>
+										<ErrorBoundary>
+											<SettingsRow
+												title='Opt-out (requires restart)'
+												control={
+													<VoidSwitch
+														size='xs'
+														value={isOptedOut}
+														onChange={(newVal) => {
+															storageService.store(OPT_OUT_KEY, newVal, StorageScope.APPLICATION, StorageTarget.MACHINE)
+															metricsService.capture(`Set metrics opt-out to ${newVal}`, {})
+														}}
+													/>
+												}
+											/>
+										</ErrorBoundary>
+									</SettingsCard>
+								</div>
+
+								<div>
+									<SettingsPageHeader
+										title='AI Instructions'
+										description={
+											<ChatMarkdownRender inPTag={true} string={`System instructions to include with all AI requests. Alternatively, place a \`.voidrules\` file in the root of your workspace.`} chatMessageLocation={undefined} />
+										}
+									/>
+									<SettingsCard className='p-4'>
+										<ErrorBoundary>
+											<AIInstructionsBox />
+										</ErrorBoundary>
+										<div className='mt-4'>
+											<ErrorBoundary>
+												<div className='flex items-center justify-between gap-3'>
+													<div>
+														<div className='text-sm font-medium text-zyntheo-fg-1'>Disable system message</div>
+														<div className='text-xs text-zyntheo-fg-3 mt-0.5'>
+															{`When disabled, Zyntheo will not include anything in the system message except for content you specified above.`}
+														</div>
+													</div>
+													<VoidSwitch
+														size='xs'
+														value={!!settingsState.globalSettings.disableSystemMessage}
+														onChange={(newValue) => {
+															zyntheoSettingsService.setGlobalSetting('disableSystemMessage', newValue);
+														}}
+													/>
+												</div>
+											</ErrorBoundary>
+										</div>
+									</SettingsCard>
+								</div>
 							</div>
-
-
 
 							{/* MCP section */}
 							<div className={shouldShowTab('mcp') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className='text-3xl mb-2'>MCP</h2>
-									<h4 className={`text-zyntheo-fg-3 mb-4`}>
-										<ChatMarkdownRender inPTag={true} string={`
-Use Model Context Protocol to provide Agent mode with more tools.
-							`} chatMessageLocation={undefined} />
-									</h4>
-									<div className='my-2'>
-										<VoidButtonBgDarken className='px-4 py-1 w-full max-w-48' onClick={async () => { await mcpService.revealMCPConfigFile() }}>
-											Add MCP Server
-										</VoidButtonBgDarken>
-									</div>
-
+									<SettingsPageHeader
+										title='MCP'
+										description={
+											<ChatMarkdownRender inPTag={true} string={`Use Model Context Protocol to provide Agent mode with more tools.`} chatMessageLocation={undefined} />
+										}
+										action={
+											<VoidButtonBgDarken className='px-4 py-1.5 rounded-lg' onClick={async () => { await mcpService.revealMCPConfigFile() }}>
+												Add MCP Server
+											</VoidButtonBgDarken>
+										}
+									/>
 									<ErrorBoundary>
 										<MCPServersList />
 									</ErrorBoundary>
 								</ErrorBoundary>
 							</div>
-
-
-
-
-
 						</div>
-
 					</div>
 				</main>
 			</div>

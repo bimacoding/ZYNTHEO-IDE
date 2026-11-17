@@ -18,7 +18,7 @@ import { ModelDropdown, } from '../zyntheo-settings-tsx/ModelDropdown.js';
 import { PastThreadsList } from './SidebarThreadSelector.js';
 import { ZYNTHEO_CTRL_L_ACTION_ID } from '../../../actionIDs.js';
 import { ZYNTHEO_OPEN_SETTINGS_ACTION_ID } from '../../../zyntheoSettingsPane.js';
-import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled } from '../../../../../../../workbench/contrib/zyntheo/common/zyntheoSettingsTypes.js';
+import { ChatMode, chatModes, displayInfoOfChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled, normalizeChatMode } from '../../../../../../../workbench/contrib/zyntheo/common/zyntheoSettingsTypes.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../zyntheo-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
@@ -247,39 +247,33 @@ const ReasoningOptionSlider = ({ featureName }: { featureName: FeatureName }) =>
 
 
 
-const nameOfChatMode = {
-	'normal': 'Chat',
-	'gather': 'Gather',
-	'agent': 'Agent',
-}
-
-const detailOfChatMode = {
-	'normal': 'Normal chat',
-	'gather': 'Reads files, but can\'t edit',
-	'agent': 'Edits files and uses tools',
-}
-
-
 const ChatModeDropdown = ({ className }: { className: string }) => {
 	const accessor = useAccessor()
 
 	const zyntheoSettingsService = accessor.get('IZyntheoSettingsService')
+	const chatThreadsService = accessor.get('IChatThreadService')
 	const settingsState = useSettingsState()
+	const chatThreadsState = useChatThreadsState()
 
-	const options: ChatMode[] = useMemo(() => ['normal', 'gather', 'agent'], [])
+	const options: ChatMode[] = useMemo(() => [...chatModes], [])
+	const currentThreadId = chatThreadsState.currentThreadId
+	const selectedOption = normalizeChatMode(
+		chatThreadsService.getThreadChatMode(currentThreadId) || settingsState.globalSettings.chatMode
+	)
 
 	const onChangeOption = useCallback((newVal: ChatMode) => {
 		zyntheoSettingsService.setGlobalSetting('chatMode', newVal)
-	}, [zyntheoSettingsService])
+		chatThreadsService.setThreadChatMode(currentThreadId, newVal)
+	}, [zyntheoSettingsService, chatThreadsService, currentThreadId])
 
 	return <VoidCustomDropdownBox
 		className={className}
 		options={options}
-		selectedOption={settingsState.globalSettings.chatMode}
+		selectedOption={selectedOption}
 		onChangeOption={onChangeOption}
-		getOptionDisplayName={(val) => nameOfChatMode[val]}
-		getOptionDropdownName={(val) => nameOfChatMode[val]}
-		getOptionDropdownDetail={(val) => detailOfChatMode[val]}
+		getOptionDisplayName={(val) => displayInfoOfChatMode[val].name}
+		getOptionDropdownName={(val) => displayInfoOfChatMode[val].name}
+		getOptionDropdownDetail={(val) => displayInfoOfChatMode[val].detail}
 		getOptionsEqual={(a, b) => a === b}
 	/>
 
@@ -2894,6 +2888,7 @@ export const SidebarChat = () => {
 
 	const currentThread = chatThreadsService.getCurrentThread()
 	const previousMessages = currentThread?.messages ?? []
+	const currentChatMode = normalizeChatMode(currentThread?.chatMode || settingsState.globalSettings.chatMode)
 
 	const selections = currentThread.state.stagingSelections
 	const setSelections = (s: StagingSelectionItem[]) => { chatThreadsService.setCurrentThreadState({ stagingSelections: s }) }
@@ -2920,15 +2915,22 @@ export const SidebarChat = () => {
 	const onSubmit = useCallback(async (_forceSubmit?: string) => {
 
 		if (isDisabled && !_forceSubmit) return
-		if (isRunning) return
 
 		const threadId = chatThreadsService.state.currentThreadId
-
-		// send message to LLM
 		const userMessage = _forceSubmit || textAreaRef.current?.value || ''
+		const currentMode = normalizeChatMode(chatThreadsService.getThreadChatMode(threadId) || settingsState.globalSettings.chatMode)
+		const currentSelections = selections
+		const shouldSpawnParallel = currentMode === 'multitask' && !!isRunning
+
+		if (isRunning && !shouldSpawnParallel) return
+
+		let targetThreadId = threadId
+		if (shouldSpawnParallel) {
+			targetThreadId = chatThreadsService.openNewThread({ chatMode: 'multitask', switchTo: true })
+		}
 
 		try {
-			await chatThreadsService.addUserMessageAndStreamResponse({ userMessage, threadId })
+			await chatThreadsService.addUserMessageAndStreamResponse({ userMessage, threadId: targetThreadId, _chatSelections: currentSelections })
 		} catch (e) {
 			console.error('Error while sending message in chat:', e)
 		}
@@ -2937,7 +2939,7 @@ export const SidebarChat = () => {
 		textAreaFnsRef.current?.setValue('')
 		textAreaRef.current?.focus() // focus input after submit
 
-	}, [chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState])
+	}, [chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState, previousMessages.length, selections])
 
 	const onAbort = async () => {
 		const threadId = currentThread.id
@@ -3078,7 +3080,7 @@ export const SidebarChat = () => {
 		<VoidInputBox2
 			enableAtToMention
 			className={`min-h-[81px] px-0.5 py-0.5`}
-			placeholder={`@ to mention, ${keybindingString ? `${keybindingString} to add a selection. ` : ''}Enter instructions...`}
+			placeholder={`${keybindingString ? `${keybindingString} to add a selection. ` : ''}${displayInfoOfChatMode[currentChatMode].placeholder}`}
 			onChangeText={onChangeText}
 			onKeyDown={onKeyDown}
 			onFocus={() => { chatThreadsService.setCurrentlyFocusedMessageIdx(undefined) }}
@@ -3094,11 +3096,23 @@ export const SidebarChat = () => {
 
 
 	const initiallySuggestedPromptsHTML = <div className='flex flex-col gap-2 w-full text-nowrap text-zyntheo-fg-3 select-none'>
-		{[
+		{(currentChatMode === 'plan' ? [
+			'Plan how to add authentication',
+			'Break down a refactor of the settings layer',
+			'What should we change before implementing this feature?'
+		] : currentChatMode === 'debug' ? [
+			'Help me find why this test is failing',
+			'Diagnose this stack trace',
+			'Why is this function returning undefined?'
+		] : currentChatMode === 'ask' ? [
+			'Summarize my codebase',
+			'How does chat mode selection work?',
+			'Where is the agent tool loop implemented?'
+		] : [
 			'Summarize my codebase',
 			'How do types work in Rust?',
-			'Create a .voidrules file for me'
-		].map((text, index) => (
+			'Create a .zyntheorules file for me'
+		]).map((text, index) => (
 			<div
 				key={index}
 				className='py-1 px-2 rounded text-sm bg-zinc-700/5 hover:bg-zinc-700/10 dark:bg-zinc-300/5 dark:hover:bg-zinc-300/10 cursor-pointer opacity-80 hover:opacity-100'

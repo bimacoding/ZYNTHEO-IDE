@@ -435,7 +435,53 @@ export const isFeatureNameDisabled = (featureName: FeatureName, settingsState: Z
 
 
 
-export type ChatMode = 'agent' | 'gather' | 'normal'
+export const chatModes = ['agent', 'plan', 'debug', 'multitask', 'ask'] as const
+export type ChatMode = typeof chatModes[number]
+
+const legacyChatModeMap: Record<string, ChatMode> = {
+	gather: 'ask',
+	normal: 'ask',
+}
+
+export const isChatMode = (value: unknown): value is ChatMode =>
+	typeof value === 'string' && (chatModes as readonly string[]).includes(value)
+
+export const normalizeChatMode = (value: unknown): ChatMode => {
+	if (isChatMode(value)) return value
+	if (typeof value === 'string' && value in legacyChatModeMap) return legacyChatModeMap[value]
+	return 'agent'
+}
+
+export const chatModeAllowsWrites = (mode: ChatMode): boolean =>
+	mode === 'agent' || mode === 'debug' || mode === 'multitask'
+
+export const displayInfoOfChatMode: Record<ChatMode, { name: string; detail: string; placeholder: string }> = {
+	agent: {
+		name: 'Agent',
+		detail: 'Edits files and runs commands',
+		placeholder: '@ to mention. Describe the change to implement...',
+	},
+	plan: {
+		name: 'Plan',
+		detail: 'Read-only: design an approach first',
+		placeholder: '@ to mention. Describe what you want to plan...',
+	},
+	debug: {
+		name: 'Debug',
+		detail: 'Diagnose errors, then apply a targeted fix',
+		placeholder: '@ to mention. Paste the error or describe the bug...',
+	},
+	multitask: {
+		name: 'Multitask',
+		detail: 'Starts a parallel agent chat',
+		placeholder: '@ to mention. Start a focused parallel task...',
+	},
+	ask: {
+		name: 'Ask',
+		detail: 'Answers questions without editing',
+		placeholder: '@ to mention. Ask anything about the codebase...',
+	},
+}
 
 
 export type GlobalSettings = {

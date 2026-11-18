@@ -68,6 +68,9 @@ const findStagingSelectionIndex = (currentSelections: StagingSelectionItem[] | u
 		if (s.type === 'Folder' && newSelection.type === 'Folder') {
 			return i
 		}
+		if (s.type === 'Image' && newSelection.type === 'Image') {
+			return i
+		}
 	}
 	return null
 }

@@ -67,6 +67,10 @@ import './userDataMigrationService.js'
 // register file service (for explorer context menu)
 import './fileService.js'
 
+// embedded browser (select element, console, screenshot)
+import './zyntheoBrowser.contribution.js'
+import '../common/zyntheoBrowserService.js'
+
 // register source control management
 import './zyntheoSCMService.js'
 
@@ -89,3 +93,6 @@ import '../common/zyntheoUpdateService.js'
 
 // model service
 import '../common/zyntheoModelService.js'
+
+// project/user rules and skills (.zyntheo/rules, .zyntheo/skills)
+import '../common/zyntheoRulesService.js'

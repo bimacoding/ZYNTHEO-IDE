@@ -135,6 +135,9 @@ import { IZyntheoSCMService } from '../../workbench/contrib/zyntheo/common/zynth
 import { MCPChannel } from '../../workbench/contrib/zyntheo/electron-main/mcpChannel.js';
 import { ZyntheoRustMainService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoRustMainService.js';
 import { IZyntheoRustMainService, ZYNTHEO_RUST_CHANNEL_NAME } from '../../workbench/contrib/zyntheo/common/zyntheoRustServiceTypes.js';
+import { ZyntheoBrowserMainService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoBrowserMainService.js';
+import { IZyntheoBrowserMainService } from '../../workbench/contrib/zyntheo/common/zyntheoBrowserServiceTypes.js';
+import { ZYNTHEO_BROWSER_CHANNEL_NAME } from '../../workbench/contrib/zyntheo/common/zyntheoBrowser.js';
 /**
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).
@@ -1108,6 +1111,7 @@ export class CodeApplication extends Disposable {
 		services.set(IZyntheoUpdateService, new SyncDescriptor(ZyntheoMainUpdateService, undefined, false));
 		services.set(IZyntheoSCMService, new SyncDescriptor(ZyntheoSCMService, undefined, false));
 		services.set(IZyntheoRustMainService, new SyncDescriptor(ZyntheoRustMainService, undefined, false));
+		services.set(IZyntheoBrowserMainService, new SyncDescriptor(ZyntheoBrowserMainService, undefined, false));
 
 		// Default Extensions Profile Init
 		services.set(IExtensionsProfileScannerService, new SyncDescriptor(ExtensionsProfileScannerService, undefined, true));
@@ -1259,6 +1263,9 @@ export class CodeApplication extends Disposable {
 
 		const zyntheoRustChannel = ProxyChannel.fromService(accessor.get(IZyntheoRustMainService), disposables);
 		mainProcessElectronServer.registerChannel(ZYNTHEO_RUST_CHANNEL_NAME, zyntheoRustChannel);
+
+		const zyntheoBrowserChannel = ProxyChannel.fromService(accessor.get(IZyntheoBrowserMainService), disposables);
+		mainProcessElectronServer.registerChannel(ZYNTHEO_BROWSER_CHANNEL_NAME, zyntheoBrowserChannel);
 
 		// Extension Host Debug Broadcasting
 		const electronExtensionHostDebugBroadcastChannel = new ElectronExtensionHostDebugBroadcastChannel(accessor.get(IWindowsMainService));

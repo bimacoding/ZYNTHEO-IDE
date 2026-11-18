@@ -22,7 +22,7 @@ import { ChatMode, chatModes, displayInfoOfChatMode, displayInfoOfProviderName, 
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../zyntheo-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -35,6 +35,7 @@ import { ToolApprovalTypeSwitch } from '../zyntheo-settings-tsx/Settings.js';
 
 import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
+import { applyLiveTranscript, createImageStagingSelection, encodeBytesToBase64, getSpeechRecognitionConstructor, guessMimeType, isImageFileName, isImageMimeType, MAX_IMAGE_BYTES, SpeechRecognitionLike } from '../../../../common/chatAttachments.js';
 
 
 
@@ -311,6 +312,9 @@ interface ZyntheoChatAreaProps {
 	onClose?: () => void;
 
 	featureName: FeatureName;
+	textAreaRef?: React.RefObject<HTMLTextAreaElement | null>;
+	textAreaFnsRef?: React.RefObject<TextAreaFns | null>;
+	enableComposerExtras?: boolean;
 }
 
 export const ZyntheoChatArea: React.FC<ZyntheoChatAreaProps> = ({
@@ -330,6 +334,9 @@ export const ZyntheoChatArea: React.FC<ZyntheoChatAreaProps> = ({
 	setSelections,
 	featureName,
 	loadingIcon,
+	textAreaRef,
+	textAreaFnsRef,
+	enableComposerExtras = featureName === 'Chat',
 }) => {
 	return (
 		<div
@@ -347,6 +354,23 @@ export const ZyntheoChatArea: React.FC<ZyntheoChatAreaProps> = ({
 			onClick={(e) => {
 				onClickAnywhere?.()
 			}}
+			onDragOver={enableComposerExtras ? (e) => {
+				e.preventDefault()
+				e.dataTransfer.dropEffect = 'copy'
+			} : undefined}
+			onDrop={enableComposerExtras ? async (e) => {
+				e.preventDefault()
+				const files = Array.from(e.dataTransfer?.files ?? [])
+				if (!files.length) return
+				await attachBrowserFiles(files, { selections, setSelections, textAreaRef, textAreaFnsRef })
+			} : undefined}
+			onPaste={enableComposerExtras ? async (e) => {
+				const files = Array.from(e.clipboardData?.files ?? [])
+				const imageFiles = files.filter(f => isImageMimeType(f.type) || isImageFileName(f.name))
+				if (!imageFiles.length) return
+				e.preventDefault()
+				await attachBrowserFiles(imageFiles, { selections, setSelections, textAreaRef, textAreaFnsRef })
+			} : undefined}
 		>
 			{/* Selections section */}
 			{showSelections && selections && setSelections && (
@@ -387,7 +411,16 @@ export const ZyntheoChatArea: React.FC<ZyntheoChatAreaProps> = ({
 					</div>
 				)}
 
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1.5">
+
+					{enableComposerExtras && (
+						<ChatComposerExtras
+							selections={selections}
+							setSelections={setSelections}
+							textAreaRef={textAreaRef}
+							textAreaFnsRef={textAreaFnsRef}
+						/>
+					)}
 
 					{isStreaming && loadingIcon}
 
@@ -439,6 +472,244 @@ export const ButtonStop = ({ className, ...props }: ButtonHTMLAttributes<HTMLBut
 	>
 		<IconSquare size={DEFAULT_BUTTON_SIZE} className="stroke-[3] p-[7px]" />
 	</button>
+}
+
+const ComposerIconButton = ({
+	title,
+	disabled,
+	active,
+	onClick,
+	children,
+}: {
+	title: string
+	disabled?: boolean
+	active?: boolean
+	onClick: () => void
+	children: React.ReactNode
+}) => {
+	return <button
+		type='button'
+		title={title}
+		disabled={disabled}
+		onClick={(e) => {
+			e.stopPropagation()
+			onClick()
+		}}
+		className={`
+			w-[22px] h-[22px] rounded-full flex items-center justify-center
+			border border-zyntheo-border-2
+			${active ? 'bg-red-500/90 text-white border-red-400' : 'bg-zyntheo-bg-1 text-zyntheo-fg-2 hover:bg-zyntheo-bg-2 hover:text-zyntheo-fg-1'}
+			${disabled ? 'opacity-50 cursor-default' : 'cursor-pointer'}
+		`}
+	>
+		{children}
+	</button>
+}
+
+const fileToStagingSelection = async (file: File): Promise<StagingSelectionItem | null> => {
+	if (isImageMimeType(file.type) || isImageFileName(file.name)) {
+		if (file.size > MAX_IMAGE_BYTES) {
+			return null
+		}
+		const buffer = new Uint8Array(await file.arrayBuffer())
+		return createImageStagingSelection({
+			name: file.name,
+			mimeType: file.type || guessMimeType(file.name, 'image/png'),
+			dataBase64: encodeBytesToBase64(buffer),
+		})
+	}
+	const nativePath = (file as File & { path?: string }).path
+	const uri = URI.file(nativePath || file.name)
+	return {
+		type: 'File',
+		uri,
+		language: 'plaintext',
+		state: { wasAddedAsCurrentFile: false },
+	}
+}
+
+const attachBrowserFiles = async (
+	files: File[],
+	opts: {
+		selections?: StagingSelectionItem[]
+		setSelections?: (s: StagingSelectionItem[]) => void
+		textAreaRef?: React.RefObject<HTMLTextAreaElement | null>
+		textAreaFnsRef?: React.RefObject<TextAreaFns | null>
+	}
+) => {
+	if (!opts.setSelections) {
+		return
+	}
+	const next = [...(opts.selections ?? [])]
+	for (const file of files) {
+		const selection = await fileToStagingSelection(file)
+		if (!selection) {
+			continue
+		}
+		const duplicate = next.find(s => s.uri.fsPath === selection.uri.fsPath && s.type === selection.type)
+		if (duplicate) {
+			continue
+		}
+		next.push(selection)
+	}
+	opts.setSelections(next)
+}
+
+const ChatComposerExtras = ({
+	selections,
+	setSelections,
+	textAreaRef,
+	textAreaFnsRef,
+}: {
+	selections?: StagingSelectionItem[]
+	setSelections?: (s: StagingSelectionItem[]) => void
+	textAreaRef?: React.RefObject<HTMLTextAreaElement | null>
+	textAreaFnsRef?: React.RefObject<TextAreaFns | null>
+}) => {
+	const accessor = useAccessor()
+	const chatThreadsService = accessor.get('IChatThreadService')
+	const languageService = accessor.get('ILanguageService')
+	const fileInputRef = useRef<HTMLInputElement>(null)
+	const [isListening, setIsListening] = useState(false)
+	const [voiceUnsupported, setVoiceUnsupported] = useState(false)
+	const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+	const baselineRef = useRef('')
+	const finalTranscriptRef = useRef('')
+
+	const addStaging = useCallback((selection: StagingSelectionItem) => {
+		if (setSelections) {
+			const current = selections ?? []
+			const duplicate = current.find(s => s.uri.fsPath === selection.uri.fsPath && s.type === selection.type)
+			if (duplicate) {
+				return
+			}
+			setSelections([...current, selection])
+			return
+		}
+		chatThreadsService.addNewStagingSelection(selection)
+	}, [chatThreadsService, selections, setSelections])
+
+	const onPickFiles = useCallback(async (fileList: FileList | File[] | null) => {
+		const files = fileList ? Array.from(fileList) : []
+		if (!files.length) {
+			return
+		}
+		if (setSelections) {
+			await attachBrowserFiles(files, { selections, setSelections, textAreaRef, textAreaFnsRef })
+		} else {
+			for (const file of files) {
+				const selection = await fileToStagingSelection(file)
+				if (!selection) continue
+				if (selection.type === 'File') {
+					selection.language = languageService.guessLanguageIdByFilepathOrFirstLine(selection.uri) || 'plaintext'
+				}
+				addStaging(selection)
+			}
+		}
+		if (fileInputRef.current) {
+			fileInputRef.current.value = ''
+		}
+	}, [addStaging, languageService, selections, setSelections, textAreaRef, textAreaFnsRef])
+
+	const stopListening = useCallback(() => {
+		try {
+			recognitionRef.current?.stop()
+		} catch {
+		}
+		recognitionRef.current = null
+		setIsListening(false)
+	}, [])
+
+	const startListening = useCallback(() => {
+		const Ctor = getSpeechRecognitionConstructor(typeof window === 'undefined' ? undefined : window)
+		if (!Ctor) {
+			setVoiceUnsupported(true)
+			return
+		}
+		const textarea = textAreaRef?.current
+		baselineRef.current = textarea?.value ?? ''
+		finalTranscriptRef.current = ''
+		const recognition = new Ctor()
+		recognition.continuous = true
+		recognition.interimResults = true
+		recognition.lang = (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'en-US'
+		recognition.onresult = (event) => {
+			let finalChunk = finalTranscriptRef.current
+			let interim = ''
+			for (let i = event.resultIndex; i < event.results.length; i++) {
+				const result = event.results[i]
+				const spoken = result[0]?.transcript ?? ''
+				if (result.isFinal) {
+					finalChunk = `${finalChunk} ${spoken}`.trim()
+				} else {
+					interim += spoken
+				}
+			}
+			finalTranscriptRef.current = finalChunk
+			const next = applyLiveTranscript(baselineRef.current, finalChunk, interim)
+			if (textAreaFnsRef?.current) {
+				textAreaFnsRef.current.setValue(next)
+			} else if (textarea) {
+				textarea.value = next
+			}
+		}
+		recognition.onerror = () => {
+			stopListening()
+		}
+		recognition.onend = () => {
+			setIsListening(false)
+			recognitionRef.current = null
+		}
+		recognitionRef.current = recognition
+		try {
+			recognition.start()
+			setIsListening(true)
+			setVoiceUnsupported(false)
+		} catch {
+			setVoiceUnsupported(true)
+			stopListening()
+		}
+	}, [stopListening, textAreaFnsRef, textAreaRef])
+
+	useEffect(() => {
+		return () => {
+			try {
+				recognitionRef.current?.abort?.()
+			} catch {
+			}
+		}
+	}, [])
+
+	return <>
+		<input
+			ref={fileInputRef}
+			type='file'
+			multiple
+			className='hidden'
+			accept='image/*,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp,.pdf,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.c,.cpp,.h,.cs,.rb,.php,.html,.css,.xml,.yml,.yaml,.toml,.sh,.sql'
+			onChange={(e) => { void onPickFiles(e.target.files) }}
+		/>
+		<ComposerIconButton
+			title='Add file'
+			onClick={() => fileInputRef.current?.click()}
+		>
+			<Paperclip size={13} />
+		</ComposerIconButton>
+		<ComposerIconButton
+			title={voiceUnsupported ? 'Voice input is not supported in this environment' : isListening ? 'Stop voice input' : 'Voice input'}
+			active={isListening}
+			disabled={voiceUnsupported}
+			onClick={() => {
+				if (isListening) {
+					stopListening()
+				} else {
+					startListening()
+				}
+			}}
+		>
+			<Mic size={13} />
+		</ComposerIconButton>
+	</>
 }
 
 
@@ -645,13 +916,15 @@ export const SelectedFiles = (
 				const thisKey = selection.type === 'CodeSelection' ? selection.type + selection.language + selection.range + selection.state.wasAddedAsCurrentFile + selection.uri.fsPath
 					: selection.type === 'File' ? selection.type + selection.language + selection.state.wasAddedAsCurrentFile + selection.uri.fsPath
 						: selection.type === 'Folder' ? selection.type + selection.language + selection.state + selection.uri.fsPath
-							: i
+							: selection.type === 'Image' ? selection.type + selection.name + selection.mimeType + selection.uri.fsPath
+								: i
 
 				const SelectionIcon = (
 					selection.type === 'File' ? File
 						: selection.type === 'Folder' ? Folder
 							: selection.type === 'CodeSelection' ? Text
-								: (undefined as never)
+								: selection.type === 'Image' ? ImageIcon
+									: (undefined as never)
 				)
 
 				return <div // container for summarybox and code
@@ -661,7 +934,7 @@ export const SelectedFiles = (
 					{/* tooltip for file path */}
 					<span className="truncate overflow-hidden text-ellipsis"
 						data-tooltip-id='zyntheo-tooltip'
-						data-tooltip-content={getRelative(selection.uri, accessor)}
+						data-tooltip-content={selection.type === 'Image' ? selection.name : getRelative(selection.uri, accessor)}
 						data-tooltip-place='top'
 						data-tooltip-delay-show={3000}
 					>
@@ -712,7 +985,7 @@ export const SelectedFiles = (
 							{<SelectionIcon size={10} />}
 
 							{ // file name and range
-								getBasename(selection.uri.fsPath)
+								(selection.type === 'Image' ? selection.name : getBasename(selection.uri.fsPath))
 								+ (selection.type === 'CodeSelection' ? ` (${selection.range[0]}-${selection.range[1]})` : '')
 							}
 
@@ -1142,6 +1415,7 @@ const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, curr
 			showProspectiveSelections={false}
 			selections={stagingSelections}
 			setSelections={setStagingSelections}
+			enableComposerExtras={true}
 		>
 			<VoidInputBox2
 				enableAtToMention
@@ -3076,6 +3350,9 @@ export const SidebarChat = () => {
 		selections={selections}
 		setSelections={setSelections}
 		onClickAnywhere={() => { textAreaRef.current?.focus() }}
+		textAreaRef={textAreaRef}
+		textAreaFnsRef={textAreaFnsRef}
+		enableComposerExtras={true}
 	>
 		<VoidInputBox2
 			enableAtToMention

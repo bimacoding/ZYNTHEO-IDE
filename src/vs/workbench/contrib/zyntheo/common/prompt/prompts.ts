@@ -11,6 +11,7 @@ import { os } from '../helpers/systemInfo.js';
 import { RawToolParamsObj } from '../sendLLMMessageTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode, chatModeAllowsWrites } from '../zyntheoSettingsTypes.js';
+import { describeBinaryFileForPrompt, describeImageForPrompt, isImageFileName, isProbablyBinaryString } from '../chatAttachments.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -438,7 +439,7 @@ Please assist the user with their query.`
 }
 
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, rulesSkillsInstructions }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, rulesSkillsInstructions?: string }) => {
 	const header = headerOfChatMode(mode)
 	const canWrite = chatModeAllowsWrites(mode)
 	const showPersistentTerminals = canWrite && persistentTerminalIDs.length !== 0
@@ -533,6 +534,7 @@ Here's an example of a good code block:\n${chatSuggestionDiffExample}`)
 
 	details.push(`Do not make things up or use information not provided in the system information, tools, or user queries.`)
 	details.push(`Always use MARKDOWN to format lists, bullet points, etc. Do NOT write tables.`)
+	details.push(`Follow project rules in \`.zyntheo/rules\` (and user rules in \`~/.zyntheo/rules\`). When a listed skill is relevant, read and follow \`.zyntheo/skills/<name>/SKILL.md\`.`)
 	details.push(`Today's date is ${new Date().toDateString()}.`)
 
 	const importantDetails = (`Important notes:
@@ -543,6 +545,7 @@ ${details.map((d, i) => `${i + 1}. ${d}`).join('\n\n')}`)
 	const ansStrs: string[] = []
 	ansStrs.push(header)
 	ansStrs.push(sysInfo)
+	if (rulesSkillsInstructions) ansStrs.push(rulesSkillsInstructions)
 	if (toolDefinitions) ansStrs.push(toolDefinitions)
 	ansStrs.push(importantDetails)
 	ansStrs.push(fsInfo)
@@ -612,8 +615,18 @@ export const messageOfSelection = async (
 		const str = `${s.uri.fsPath}${lineNumAddition(s.range)}:\n${content}`
 		return str
 	}
+	else if (s.type === 'Image') {
+		return describeImageForPrompt(s.name, s.mimeType)
+	}
 	else if (s.type === 'File') {
+		if (isImageFileName(s.uri.fsPath) || isImageFileName(s.uri.path)) {
+			return describeImageForPrompt(s.uri.fsPath.split(/[/\\]/).pop() || s.uri.fsPath, s.language || 'image')
+		}
 		const { val } = await readFile(opts.fileService, s.uri, DEFAULT_FILE_SIZE_LIMIT)
+
+		if (isProbablyBinaryString(val)) {
+			return describeBinaryFileForPrompt(s.uri.fsPath, val?.length)
+		}
 
 		const innerVal = val
 		const content = val === null ? ''

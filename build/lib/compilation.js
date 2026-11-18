@@ -125,10 +125,15 @@ function createCompile(src, { build, emitError, transpileOnly, preserveEnglish }
     pipeline.projectPath = projectPath;
     return pipeline;
 }
+function srcFiles(src) {
+    // Keep TypeScript project files in src/. Copying them into out/ makes tsserver
+    // treat the compiled JS tree as a second project with no inputs.
+    return gulp_1.default.src([`${src}/**`, `!${src}/tsconfig*.json`], { base: `${src}` });
+}
 function transpileTask(src, out, esbuild) {
     const task = () => {
         const transpile = createCompile(src, { build: false, emitError: true, transpileOnly: { esbuild }, preserveEnglish: false });
-        const srcPipe = gulp_1.default.src(`${src}/**`, { base: `${src}` });
+        const srcPipe = srcFiles(src);
         return srcPipe
             .pipe(transpile())
             .pipe(gulp_1.default.dest(out));
@@ -142,7 +147,7 @@ function compileTask(src, out, build, options = {}) {
             throw new Error('compilation requires 4GB of RAM');
         }
         const compile = createCompile(src, { build, emitError: true, transpileOnly: false, preserveEnglish: !!options.preserveEnglish });
-        const srcPipe = gulp_1.default.src(`${src}/**`, { base: `${src}` });
+        const srcPipe = srcFiles(src);
         const generator = new MonacoGenerator(false);
         if (src === 'src') {
             generator.execute();
@@ -179,8 +184,8 @@ function compileTask(src, out, build, options = {}) {
 function watchTask(out, build, srcPath = 'src') {
     const task = () => {
         const compile = createCompile(srcPath, { build, emitError: false, transpileOnly: false, preserveEnglish: false });
-        const src = gulp_1.default.src(`${srcPath}/**`, { base: srcPath });
-        const watchSrc = watch(`${srcPath}/**`, { base: srcPath, readDelay: 200 });
+        const src = srcFiles(srcPath);
+        const watchSrc = watch([`${srcPath}/**`, `!${srcPath}/tsconfig*.json`], { base: srcPath, readDelay: 200 });
         const generator = new MonacoGenerator(true);
         generator.execute();
         return watchSrc

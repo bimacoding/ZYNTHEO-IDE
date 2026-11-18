@@ -1084,6 +1084,7 @@ export const Settings = () => {
 	const chatThreadsService = accessor.get('IChatThreadService')
 	const notificationService = accessor.get('INotificationService')
 	const mcpService = accessor.get('IMCPService')
+	const rulesSkillsService = accessor.get('IZyntheoRulesSkillsService')
 	const storageService = accessor.get('IStorageService')
 	const metricsService = accessor.get('IMetricsService')
 	const isOptedOut = useIsOptedOut()
@@ -1513,9 +1514,27 @@ export const Settings = () => {
 									<SettingsPageHeader
 										title='AI Instructions'
 										description={
-											<ChatMarkdownRender inPTag={true} string={`System instructions to include with all AI requests. Alternatively, place a \`.voidrules\` file in the root of your workspace.`} chatMessageLocation={undefined} />
+											<ChatMarkdownRender inPTag={true} string={`System instructions to include with all AI requests. For project rules and skills, use \`.zyntheo/rules\` and \`.zyntheo/skills\` (same idea as Cursor's \`.cursor/rules\` and \`.cursor/skills\`).`} chatMessageLocation={undefined} />
 										}
 									/>
+									<SettingsCard className='p-4 mb-4'>
+										<div className='text-sm text-zyntheo-fg-3 leading-relaxed'>
+											Zyntheo automatically loads agent guidance from:
+											<ul className='list-disc ml-5 mt-2 space-y-1'>
+												<li><code>.zyntheo/rules</code> — persistent project rules (<code>.mdc</code>, <code>.md</code>)</li>
+												<li><code>.zyntheo/skills</code> — task skills with a <code>SKILL.md</code></li>
+												<li><code>~/.zyntheo/rules</code> and <code>~/.zyntheo/skills</code> — personal rules and skills</li>
+											</ul>
+										</div>
+										<div className='flex flex-wrap gap-2 mt-4'>
+											<VoidButtonBgDarken className='px-3 py-1.5 rounded-lg text-sm' onClick={async () => { await rulesSkillsService.revealWorkspaceRulesFolder() }}>
+												Open Rules Folder
+											</VoidButtonBgDarken>
+											<VoidButtonBgDarken className='px-3 py-1.5 rounded-lg text-sm' onClick={async () => { await rulesSkillsService.revealWorkspaceSkillsFolder() }}>
+												Open Skills Folder
+											</VoidButtonBgDarken>
+										</div>
+									</SettingsCard>
 									<SettingsCard className='p-4'>
 										<ErrorBoundary>
 											<AIInstructionsBox />

@@ -21,8 +21,8 @@ class ConvertContribWorkbenchContribution extends Disposable implements IWorkben
 
 		const initializeURI = (uri: URI) => {
 			this.workspaceContext.getWorkspace()
-			const voidRulesURI = URI.joinPath(uri, '.voidrules')
-			this.zyntheoModelService.initializeModel(voidRulesURI)
+			this.zyntheoModelService.initializeModel(URI.joinPath(uri, '.zyntheorules'))
+			this.zyntheoModelService.initializeModel(URI.joinPath(uri, '.voidrules'))
 		}
 
 		// call

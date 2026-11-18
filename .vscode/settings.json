@@ -8,6 +8,7 @@
 		"**/.DS_Store": true,
 		".vscode-test": true,
 		"cli/target": true,
+		"out/tsconfig*.json": true,
 		"build/**/*.js.map": true,
 		"build/**/*.js": {
 			"when": "$(basename).ts"

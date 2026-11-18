@@ -7,13 +7,13 @@ This is a community-made AppImage creation script.
 There are some reported bugs with it.
 
 To generate an AppImage yourself, feel free to look at
-stable-linux.yml in the separate `void-builder/` repo,
-which runs a GitHub Action that builds the AppImage you see on our website.
+stable-linux.yml in the separate `ZYNTHEO-IDE-builder` repo,
+which runs a GitHub Action that builds the AppImage.
 
 
-# Void AppImage Creation Script
+# Zyntheo AppImage Creation Script
 
-This script automates the process of creating an AppImage for the  Void Editor using Docker. It works on macOS and Linux platforms.
+This script automates the process of creating an AppImage for Zyntheo IDE using Docker. It works on macOS and Linux platforms.
 ## Requirements
 
 *   **Docker:** The script relies on Docker to build the AppImage inside a container.

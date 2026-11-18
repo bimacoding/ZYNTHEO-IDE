@@ -30,7 +30,7 @@
 - Dev: `./scripts/code.sh` / `code.bat`
 - Compile: `npm run compile` → gulp
 - Void React UI: `npm run buildreact` / `watchreact` under `contrib/void/browser/react/`
-- Release packaging historically via external `voideditor/void-builder` (not in this repo)
+- Release packaging via `bimacoding/ZYNTHEO-IDE-builder` (VSCodium-based pipeline, retargeted from Void)
 - CI in-repo: only `.github/workflows/triage.yml` (issue triage), no package/sign pipeline
 
 ## Product Identity (pre-rebrand)
@@ -42,7 +42,7 @@ See [ORIGINAL-VOID-IDENTIFIERS.md](ORIGINAL-VOID-IDENTIFIERS.md).
 - No prior `docs/` audit set
 - No Zyntheo string in source
 - `product.json` `licenseName: MIT` does not fully reflect dual Apache-2.0 + MIT licensing
-- No `updateUrl` for VS Code update service; Void used GitHub `voideditor/binaries`
+- No `updateUrl` for VS Code update service; Zyntheo checks GitHub `bimacoding/ZYNTHEO-IDE` releases
 
 ## Verification Commands Used
 

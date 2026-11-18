@@ -36,4 +36,4 @@ Configurable providers (do not remove silently): OpenAI-compatible, Anthropic, G
 
 - macOS bundle id, Windows AppIds, Linux desktop/AppImage scripts
 - URL protocol `void://` (→ `zyntheo://`)
-- Remote SSH/WSL extensions pointing at `voideditor/binaries` (must retarget)
+- Remote SSH/WSL extensions download REH from `bimacoding/ZYNTHEO-IDE` releases (`zyntheo-reh-*`)

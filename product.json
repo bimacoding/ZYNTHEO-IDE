@@ -33,6 +33,7 @@
 	"reportIssueUrl": "https://github.com/bimacoding/ZYNTHEO-IDE/issues/new",
 	"nodejsRepository": "https://nodejs.org",
 	"urlProtocol": "zyntheo",
+	"serverDownloadUrlTemplate": "https://github.com/bimacoding/ZYNTHEO-IDE/releases/download/${version}/zyntheo-reh-${os}-${arch}-${version}.tar.gz",
 	"extensionsGallery": {
 		"serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
 		"itemUrl": "https://marketplace.visualstudio.com/items"

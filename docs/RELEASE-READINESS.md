@@ -10,5 +10,5 @@ Checklist:
 - [ ] Electron compile + React build
 - [ ] Memory benchmarks
 - [ ] Signed installers
-- [ ] Update endpoint serving Zyntheo binaries
+- [x] Update endpoint serving Zyntheo binaries (`bimacoding/ZYNTHEO-IDE` releases + `ZYNTHEO-IDE-versions`)
 - [ ] Explicit approval for GitHub push / release publish

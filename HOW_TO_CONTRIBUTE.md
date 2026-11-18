@@ -4,15 +4,15 @@ This is the official guide on how to contribute to Zyntheo. We want to make it a
 
 There are a few ways to contribute:
 
-- 💫 Complete items on the [Roadmap](https://github.com/orgs/voideditor/projects/2).
-- 💡 Make suggestions in our [Discord](https://discord.gg/RSNjgaugJs).
+- 💫 Open or pick up items on [Issues](https://github.com/bimacoding/ZYNTHEO-IDE/issues).
+- 💡 Propose features and fixes in pull requests against this repository.
 - 🪴 Start new Issues - see [Issues](https://github.com/bimacoding/ZYNTHEO-IDE/issues).
 
 
 
 ### Codebase Guide
 
-We [highly recommend reading this](https://github.com/bimacoding/ZYNTHEO-IDE/blob/main/ZYNTHEO_CODEBASE_GUIDE.md) guide that we put together on Void's sourcecode if you'd like to add new features.
+We [highly recommend reading this](https://github.com/bimacoding/ZYNTHEO-IDE/blob/main/ZYNTHEO_CODEBASE_GUIDE.md) guide on Zyntheo's source if you'd like to add new features.
 
 The repo is not as intimidating as it first seems if you read the guide!
 
@@ -54,15 +54,15 @@ First, run `npm install -g node-gyp`. Then:
 
 ### Developer Mode Instructions
 
-Here's how to start changing Zyntheo's code. These steps cover everything from cloning Void, to opening a Developer Mode window where you can play around with your updates.
+Here's how to start changing Zyntheo's code. These steps cover everything from cloning Zyntheo, to opening a Developer Mode window where you can play around with your updates.
 
 1. `git clone https://github.com/bimacoding/ZYNTHEO-IDE` to clone the repo.
 2. `npm install` to install all dependencies.
-3. Open Void or VSCode, and initialize Developer Mode (this can take ~5 min to finish, it's done when 2 of the 3 spinners turn to check marks):
+3. Open Zyntheo or VS Code, and initialize Developer Mode (this can take ~5 min to finish, it's done when 2 of the 3 spinners turn to check marks):
    - Windows: Press <kbd>Ctrl+Shift+B</kbd>.
    - Mac: Press <kbd>Cmd+Shift+B</kbd>.
    - Linux: Press <kbd>Ctrl+Shift+B</kbd>.
-4. Open the Void Developer Mode window:
+4. Open the Zyntheo Developer Mode window:
    - Windows: `./scripts/code.bat`.
    - Mac: `./scripts/code.sh`.
    - Linux: `./scripts/code.sh`.
@@ -78,7 +78,7 @@ If you get any errors, scroll down for common fixes.
 - Make sure you followed the prerequisite steps above.
 - Make sure you have Node version `20.18.2` (the version in `.nvmrc`).
     - You can do this without changing your global Node version using [nvm](https://github.com/nvm-sh/nvm): run `nvm install`, followed by `nvm use` to install the version in `.nvmrc` locally.
-- Make sure the path to your Void folder does not have any spaces in it.
+- Make sure the path to your Zyntheo folder does not have any spaces in it.
 - If you get `"TypeError: Failed to fetch dynamically imported module"`, make sure all imports end with `.js`.
 - If you get an error with React, try running `NODE_OPTIONS="--max-old-space-size=8192" npm run buildreact`.
 - If you see missing styles, wait a few seconds and then reload.
@@ -89,9 +89,9 @@ If you get any errors, scroll down for common fixes.
 
 
 
-#### Building Void from Terminal
+#### Building Zyntheo from Terminal
 
-To build Void from the terminal instead of from inside VSCode, follow the steps above, but instead of pressing <kbd>Cmd+Shift+B</kbd>, run `npm run watch`. The build is done when you see something like this:
+To build Zyntheo from the terminal instead of from inside VS Code, follow the steps above, but instead of pressing <kbd>Cmd+Shift+B</kbd>, run `npm run watch`. The build is done when you see something like this:
 
 ```
 [watch-extensions] [00:37:39] Finished compilation extensions with 0 errors after 19303 ms
@@ -103,19 +103,19 @@ To build Void from the terminal instead of from inside VSCode, follow the steps 
 
 
 ### Distributing
-Void's maintainers distribute Void on our website and in releases. Our build pipeline is a fork of VSCodium, and it works by running GitHub Actions which create the downloadables. The build repo with more instructions lives [here](https://github.com/bimacoding/ZYNTHEO-IDE-builder).
+Zyntheo maintainers distribute builds from this repository's GitHub Releases. The packaging pipeline lives in [`ZYNTHEO-IDE-builder`](https://github.com/bimacoding/ZYNTHEO-IDE-builder), a VSCodium-based GitHub Actions repo that now clones `bimacoding/ZYNTHEO-IDE` instead of Void.
 
-If you want to completely control Void's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see our [`void-builder`](https://github.com/bimacoding/ZYNTHEO-IDE-builder) repo which builds Void and contains a few important notes about auto-updating and rebasing.
+If you want to completely control Zyntheo's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), see [`ZYNTHEO-IDE-builder`](https://github.com/bimacoding/ZYNTHEO-IDE-builder). It contains notes about auto-updating and rebasing.
 
 
 #### Building a Local Executible
-We don't usually recommend building a local executible of Void - typically you should follow the steps above to distribute a complete executible with the advantages of VSCodium baked-in, or you should just use Developer Mode to run Void locally which is much faster. If you're certain this is what you want, see details below.
+We don't usually recommend building a local executable of Zyntheo - typically you should follow the steps above to distribute a complete executable with the advantages of VSCodium baked-in, or you should just use Developer Mode to run Zyntheo locally which is much faster. If you're certain this is what you want, see details below.
 
 <details>
 	<summary> Building Locally (not recommended)</summary>
-If you're certain you want to build a local executible of Void, follow these steps. It can take ~25 minutes.
+If you're certain you want to build a local executable of Zyntheo, follow these steps. It can take ~25 minutes.
 
-Make sure you've already entered Developer Mode with Void first, then run one of the following commands. This will create a folder named `VSCode-darwin-arm64` or similar outside of the void/ repo (see below). 
+Make sure you've already entered Developer Mode with Zyntheo first, then run one of the following commands. This will create a folder named `VSCode-darwin-arm64` or similar outside of the zyntheo-ide/ repo (see below). 
 
 
 ##### Mac
@@ -133,10 +133,10 @@ Make sure you've already entered Developer Mode with Void first, then run one of
 
 ##### Local Executible Output
 
-The local executible will be located in a folder outside of `void/`:
+The local executable will be located in a folder outside of `zyntheo-ide/`:
 ```bash
 workspace/
-├── void/   # Your Void fork
+├── zyntheo-ide/   # This repository
 └── VSCode-darwin-arm64/ # Generated output
 ```
 

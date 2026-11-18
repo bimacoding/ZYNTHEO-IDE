@@ -2,11 +2,11 @@
 
 **Intelligence in Every Line.**
 
-Zyntheo IDE is an AI-first desktop code editor. It is independently maintained under [bimacoding/ZYNTHEO-IDE](https://github.com/bimacoding/ZYNTHEO-IDE).
+Zyntheo IDE is an AI-first desktop code editor. It is independently maintained under [bimacoding/ZYNTHEO-IDE](https://github.com/bimacoding/ZYNTHEO-IDE) and no longer depends on Void remotes, binaries, or builder repositories.
 
 ## Heritage and licensing
 
-Zyntheo is derived from [Void IDE](https://github.com/voideditor/void) (Apache-2.0 product additions by Glass Devtools, Inc.), which itself is a fork of [Visual Studio Code](https://github.com/microsoft/vscode) (MIT).
+Zyntheo started from Void IDE (Apache-2.0 product additions by Glass Devtools, Inc.) and is now independently maintained. Void itself was a fork of [Visual Studio Code](https://github.com/microsoft/vscode) (MIT). Historical source attribution is retained in the license files; runtime and packaging no longer depend on Void repositories.
 
 Required notices are retained in:
 

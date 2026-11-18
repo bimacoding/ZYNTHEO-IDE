@@ -1,6 +1,6 @@
 # Known Issues
 
-1. **Update/binaries** — update checker points at `bimacoding/ZYNTHEO-IDE` releases; packaged desktop binaries may not exist yet.
+1. **Update/binaries** — update checker and remote REH downloads point at `bimacoding/ZYNTHEO-IDE` releases; packaged desktop/REH binaries are produced by `bimacoding/ZYNTHEO-IDE-builder` and may not exist until that workflow has published a release.
 2. **Rust hot-path wiring** — protocol v1 + channel exist; only `getAllURIsInDirectory` may use Rust when `ZYNTHEO_RUST_SERVICES=1`. ASCII directory strings, native file watching, and release-packaged sidecar remain deferred.
 3. **App-level RAM benchmarks** — sidecar micro-bench exists; Electron total RSS comparison NOT_STARTED (no RAM improvement claims).
 4. **Residual "Void" strings** — heritage comments and migration source path names remain intentionally.

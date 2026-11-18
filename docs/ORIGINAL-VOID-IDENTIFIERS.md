@@ -64,6 +64,8 @@
 - github.com/voideditor/void, voideditor/binaries, voideditor/void-builder
 - OpenRouter HTTP-Referer: https://voideditor.com
 
+Current independent replacements are documented in [INDEPENDENCE.md](INDEPENDENCE.md).
+
 ## Copyright
 
 - Void additions: Copyright 2025 Glass Devtools, Inc. (Apache 2.0)

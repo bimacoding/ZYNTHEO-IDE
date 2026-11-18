@@ -26,9 +26,13 @@ Heritage licenses remain (Apache-2.0 product additions + MIT VS Code). Historica
 
 ## GitHub fork network
 
-`bimacoding/ZYNTHEO-IDE` left the Void fork network on 2026-11-19 (`isFork: false`, no parent). Source, remotes, runtime URLs, and GitHub network identity are independent.
+All three owned repositories left the Void fork network on 2026-11-19 (`isFork: false`, no parent):
 
-`bimacoding/ZYNTHEO-IDE-builder` still shows as a fork of `voideditor/void-builder` until that repo also uses **Settings → Danger Zone → Leave fork network**. Packaging already clones and publishes Zyntheo only.
+- `bimacoding/ZYNTHEO-IDE`
+- `bimacoding/ZYNTHEO-IDE-builder`
+- `bimacoding/ZYNTHEO-IDE-versions`
+
+Source, remotes, runtime URLs, packaging, and GitHub network identity are independent of Void.
 
 ## Verification
 

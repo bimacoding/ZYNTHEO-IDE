@@ -14,11 +14,11 @@ import { KeybindingLabel } from '../../../../base/browser/ui/keybindingLabel/key
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { defaultKeybindingLabelStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { editorForeground, registerColor, transparent } from '../../../../platform/theme/common/colorRegistry.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { isRecentFolder, IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { ColorScheme } from '../../web.api.js';
 import { OpenFileFolderAction, OpenFolderAction } from '../../actions/workspaceActions.js';
 import { IWindowOpenable } from '../../../../platform/window/common/window.js';
 import { splitRecentLabel } from '../../../../base/common/labels.js';
@@ -94,7 +94,6 @@ export class EditorGroupWatermark extends Disposable {
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		// @IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IThemeService private readonly themeService: IThemeService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IHostService private readonly hostService: IHostService,
@@ -103,26 +102,13 @@ export class EditorGroupWatermark extends Disposable {
 	) {
 		super();
 
-		const elements = h('.editor-group-watermark', [
+		const elements = h('.editor-group-watermark.zyntheo-welcome', [
 			h('.letterpress@icon'),
 			h('.shortcuts@shortcuts'),
 		]);
 
 		append(container, elements.root);
 		this.shortcuts = elements.shortcuts; // shortcuts div is modified on render()
-
-		// void icon style
-		const updateTheme = () => {
-			const theme = this.themeService.getColorTheme().type
-			const isDark = theme === ColorScheme.DARK || theme === ColorScheme.HIGH_CONTRAST_DARK
-			elements.icon.style.maxWidth = '220px'
-			elements.icon.style.opacity = '50%'
-			elements.icon.style.filter = isDark ? '' : 'invert(1)' //brightness(.5)
-		}
-		updateTheme()
-		this._register(
-			this.themeService.onDidColorThemeChange(updateTheme)
-		)
 
 		this.registerListeners();
 
@@ -161,12 +147,7 @@ export class EditorGroupWatermark extends Disposable {
 	private render(): void {
 
 		this.clear();
-		const voidIconBox = append(this.shortcuts, $('.watermark-box'));
-		const recentsBox = append(this.shortcuts, $('div'));
-		recentsBox.style.display = 'flex'
-		recentsBox.style.flex = 'row'
-		recentsBox.style.justifyContent = 'center'
-
+		const welcomeBox = append(this.shortcuts, $('.zyntheo-welcome-panel'));
 
 		const update = async () => {
 
@@ -174,152 +155,97 @@ export class EditorGroupWatermark extends Disposable {
 			const recentlyOpened = await this.workspacesService.getRecentlyOpened()
 				.catch(() => ({ files: [], workspaces: [] })).then(w => w.workspaces);
 
-			clearNode(voidIconBox);
-			clearNode(recentsBox);
+			clearNode(welcomeBox);
 
 			this.currentDisposables.forEach(label => label.dispose());
 			this.currentDisposables.clear();
 
 
-			// Void - if the workbench is empty, show open
 			if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
 
-				// Create a flex container for buttons with vertical direction
-				const buttonContainer = $('div');
-				buttonContainer.style.display = 'flex';
-				buttonContainer.style.flexDirection = 'column'; // Change to column for vertical stacking
-				buttonContainer.style.alignItems = 'center'; // Center the buttons horizontally
-				buttonContainer.style.gap = '8px'; // Reduce gap between buttons from 16px to 8px
-				buttonContainer.style.marginBottom = '16px';
-				voidIconBox.appendChild(buttonContainer);
+				const heading = append(welcomeBox, $('.zyntheo-welcome-heading'));
+				append(heading, $('div.zyntheo-welcome-title')).textContent = 'Zyntheo';
+				append(heading, $('div.zyntheo-welcome-subtitle')).textContent = 'Open a project to start coding';
 
-				// Open a folder
-				const openFolderButton = h('button')
-				openFolderButton.root.classList.add('void-openfolder-button')
-				openFolderButton.root.style.display = 'block'
-				openFolderButton.root.style.width = '124px' // Set width to 124px as requested
-				openFolderButton.root.textContent = 'Open Folder'
-				openFolderButton.root.onclick = () => {
-					this.commandService.executeCommand(isMacintosh && isNative ? OpenFileFolderAction.ID : OpenFolderAction.ID)
-					// if (this.contextKeyService.contextMatchesRules(ContextKeyExpr.and(WorkbenchStateContext.isEqualTo('workspace')))) {
-					// 	this.commandService.executeCommand(OpenFolderViaWorkspaceAction.ID);
-					// } else {
-					// 	this.commandService.executeCommand(isMacintosh ? 'workbench.action.files.openFileFolder' : 'workbench.action.files.openFolder');
-					// }
-				}
-				buttonContainer.appendChild(openFolderButton.root);
+				const buttonContainer = append(welcomeBox, $('.zyntheo-welcome-actions'));
 
-				// Open SSH button
-				const openSSHButton = h('button')
-				openSSHButton.root.classList.add('void-openssh-button')
-				openSSHButton.root.style.display = 'block'
-				openSSHButton.root.style.backgroundColor = '#5a5a5a' // Made darker than the default gray
-				openSSHButton.root.style.width = '124px' // Set width to 124px as requested
-				openSSHButton.root.textContent = 'Open SSH'
-				openSSHButton.root.onclick = () => {
+				const openFolderButton = append(buttonContainer, $('button.zyntheo-openfolder-button'));
+				openFolderButton.setAttribute('type', 'button');
+				append(openFolderButton, this.createIcon(Codicon.folderOpened));
+				append(openFolderButton, $('span')).textContent = 'Open Folder';
+				openFolderButton.onclick = () => {
+					this.commandService.executeCommand(isMacintosh && isNative ? OpenFileFolderAction.ID : OpenFolderAction.ID);
+				};
+
+				const openSSHButton = append(buttonContainer, $('button.zyntheo-openssh-button'));
+				openSSHButton.setAttribute('type', 'button');
+				append(openSSHButton, this.createIcon(Codicon.remoteExplorer));
+				append(openSSHButton, $('span')).textContent = 'Open SSH';
+				openSSHButton.onclick = () => {
 					this.viewsService.openViewContainer(REMOTE_EXPLORER_VIEWLET_ID);
-				}
-				buttonContainer.appendChild(openSSHButton.root);
+				};
 
+				const recentFolders = recentlyOpened.filter(isRecentFolder).slice(0, 5);
+				if (recentFolders.length !== 0) {
+					const recents = append(welcomeBox, $('.zyntheo-welcome-recents'));
+					append(recents, $('div.zyntheo-welcome-recents-label')).textContent = 'Recent';
 
-				// Recents
-				if (recentlyOpened.length !== 0) {
+					for (const recent of recentFolders) {
+						if (!isRecentFolder(recent)) {
+							continue;
+						}
+						const fullPath = recent.label || this.labelService.getWorkspaceLabel(recent.folderUri, { verbose: Verbosity.LONG });
+						const windowOpenable: IWindowOpenable = { folderUri: recent.folderUri };
+						const { name, parentPath } = splitRecentLabel(fullPath);
 
-					voidIconBox.append(
-						...recentlyOpened.map((w, i) => {
-
-							let fullPath: string;
-							let windowOpenable: IWindowOpenable;
-							if (isRecentFolder(w)) {
-								windowOpenable = { folderUri: w.folderUri };
-								fullPath = w.label || this.labelService.getWorkspaceLabel(w.folderUri, { verbose: Verbosity.LONG });
-							}
-							else {
-								return null
-								// fullPath = w.label || this.labelService.getWorkspaceLabel(w.workspace, { verbose: Verbosity.LONG });
-								// windowOpenable = { workspaceUri: w.workspace.configPath };
-							}
-
-
-							const { name, parentPath } = splitRecentLabel(fullPath);
-
-							const linkSpan = $('span');
-							linkSpan.classList.add('void-link')
-							linkSpan.style.display = 'flex'
-							linkSpan.style.gap = '4px'
-							linkSpan.style.padding = '8px'
-
-							linkSpan.addEventListener('click', e => {
-								this.hostService.openWindow([windowOpenable], {
-									forceNewWindow: e.ctrlKey || e.metaKey,
-									remoteAuthority: w.remoteAuthority || null // local window if remoteAuthority is not set or can not be deducted from the openable
-								});
-								e.preventDefault();
-								e.stopPropagation();
+						const item = append(recents, $('button.zyntheo-welcome-recent-item'));
+						item.title = fullPath;
+						item.setAttribute('type', 'button');
+						item.addEventListener('click', e => {
+							this.hostService.openWindow([windowOpenable], {
+								forceNewWindow: e.ctrlKey || e.metaKey,
+								remoteAuthority: recent.remoteAuthority || null
 							});
+							e.preventDefault();
+							e.stopPropagation();
+						});
 
-							const nameSpan = $('span');
-							nameSpan.innerText = name;
-							nameSpan.title = fullPath;
-							linkSpan.appendChild(nameSpan);
+						const icon = append(item, $('span.zyntheo-welcome-recent-icon'));
+						append(icon, this.createIcon(Codicon.folder));
 
-							const dirSpan = $('span');
-							dirSpan.style.paddingLeft = '4px';
-							dirSpan.style.whiteSpace = 'nowrap';
-							dirSpan.style.overflow = 'hidden';
-							dirSpan.style.maxWidth = '300px';
-							dirSpan.innerText = parentPath;
-							dirSpan.title = fullPath;
-
-							linkSpan.appendChild(dirSpan);
-
-							return linkSpan
-						})
-							.filter(v => !!v)
-							.slice(0, 5) // take 5 most recent
-					)
+						const meta = append(item, $('span.zyntheo-welcome-recent-meta'));
+						append(meta, $('span.zyntheo-welcome-recent-name')).textContent = name;
+						append(meta, $('span.zyntheo-welcome-recent-path')).textContent = parentPath;
+					}
 				}
 
 			}
 			else {
 
-				// show them Void keybindings
+				const keysBox = append(welcomeBox, $('.zyntheo-welcome-keys'));
+				append(keysBox, $('div.zyntheo-welcome-keys-label')).textContent = 'Get started';
+
 				const keys = this.keybindingService.lookupKeybinding(ZYNTHEO_CTRL_L_ACTION_ID);
-				const dl = append(voidIconBox, $('dl'));
+				const dl = append(keysBox, $('dl'));
 				const dt = append(dl, $('dt'));
-				dt.textContent = 'Chat'
+				dt.textContent = 'Chat';
 				const dd = append(dl, $('dd'));
 				const label = new KeybindingLabel(dd, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
-				if (keys)
+				if (keys) {
 					label.set(keys);
+				}
 				this.currentDisposables.add(label);
 
-
 				const keys2 = this.keybindingService.lookupKeybinding(ZYNTHEO_CTRL_K_ACTION_ID);
-				const dl2 = append(voidIconBox, $('dl'));
+				const dl2 = append(keysBox, $('dl'));
 				const dt2 = append(dl2, $('dt'));
-				dt2.textContent = 'Quick Edit'
+				dt2.textContent = 'Quick Edit';
 				const dd2 = append(dl2, $('dd'));
 				const label2 = new KeybindingLabel(dd2, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
-				if (keys2)
+				if (keys2) {
 					label2.set(keys2);
+				}
 				this.currentDisposables.add(label2);
-
-				// const keys3 = this.keybindingService.lookupKeybinding('workbench.action.openGlobalKeybindings');
-				// const button3 = append(recentsBox, $('button'));
-				// button3.textContent = `Void Settings`
-				// button3.style.display = 'block'
-				// button3.style.marginLeft = 'auto'
-				// button3.style.marginRight = 'auto'
-				// button3.classList.add('void-settings-watermark-button')
-
-				// const label3 = new KeybindingLabel(button3, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
-				// if (keys3)
-				// 	label3.set(keys3);
-				// button3.onclick = () => {
-				// 	this.commandService.executeCommand(ZYNTHEO_OPEN_SETTINGS_ACTION_ID)
-				// }
-				// this.currentDisposables.add(label3);
 
 			}
 
@@ -327,6 +253,12 @@ export class EditorGroupWatermark extends Disposable {
 
 		update();
 		this.transientDisposables.add(this.keybindingService.onDidUpdateKeybindings(update));
+	}
+
+	private createIcon(icon: ThemeIcon): HTMLElement {
+		const el = $('span');
+		el.classList.add(...ThemeIcon.asClassNameArray(icon));
+		return el;
 	}
 
 	private clear(): void {

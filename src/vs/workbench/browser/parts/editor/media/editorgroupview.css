@@ -32,11 +32,15 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark  {
 	display: flex;
 	height: 100%;
-	max-width: 290px;
+	max-width: 420px;
+	width: min(420px, calc(100% - 48px));
 	margin: auto;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+	gap: 28px;
+	padding: 24px 0 48px;
+	box-sizing: border-box;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container:not(.empty) > .editor-group-watermark {
@@ -52,13 +56,17 @@
 /* light */
 .zyntheo-icon,
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .letterpress {
-	width: 100%;
-	max-height: 100%;
+	width: 168px;
+	max-width: 42vw;
+	max-height: 168px;
 	aspect-ratio: 1/1;
+	flex: 0 0 auto;
+	opacity: 0.92;
 	background-image: url('./zyntheo_logo.png'); /* Zyntheo logo */
 	background-size: contain;
-	background-position-x: center;
+	background-position: center;
 	background-repeat: no-repeat;
+	filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.28));
 }
 
 .zyntheo-icon,
@@ -77,9 +85,19 @@
 }
 
 .monaco-workbench .part.editor > .content:not(.empty) .editor-group-container > .editor-group-watermark > .shortcuts,
-.monaco-workbench .part.editor > .content.auxiliary .editor-group-container > .editor-group-watermark > .shortcuts,
-.monaco-workbench .part.editor > .content .editor-group-container.max-height-478px > .editor-group-watermark > .shortcuts {
+.monaco-workbench .part.editor > .content.auxiliary .editor-group-container > .editor-group-watermark > .shortcuts {
 	display: none;
+}
+
+.monaco-workbench .part.editor > .content:not(.empty) .editor-group-container.max-height-478px > .editor-group-watermark > .shortcuts,
+.monaco-workbench .part.editor > .content.auxiliary .editor-group-container.max-height-478px > .editor-group-watermark > .shortcuts {
+	display: none;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts {
+	width: 100%;
+	display: flex;
+	justify-content: center;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts > .watermark-box {

@@ -127,12 +127,15 @@ Tool MCP muncul di agent/debug/multitask (mode tulis). Mode Plan/Ask tetap read-
 
 ## Chat tabs (seperti Cursor)
 
-- Tab di atas input menampilkan agent aktif. Titik status: running / menunggu approval / selesai.
-- **+** atau `Ctrl/Cmd+Shift+L` = New Agent (thread kosong, tab baru).
-- Subagent yang di-spawn otomatis muncul sebagai tab. Klik tab untuk membuka chat itu.
-- History (ikon jam) tetap menampilkan thread lama.
+- Tab di bawah header CHAT meniru Cursor: chat terbaru berjajar, tab aktif lebih terang dengan tombol close, tab lain redup.
+- **+** di header CHAT atau `Ctrl/Cmd+Shift+L` = New Agent (thread kosong, tab baru).
+- Close (`×`) mengarsipkan chat, **bukan** menghapus. Buka lagi dari ikon jam (history).
+- Subagent yang di-spawn otomatis muncul sebagai tab. Parent menunggu ringkasan child, lalu kartu hasil bisa diklik untuk membuka tab itu.
 
-## Slash commands di chat
+## Composer (seperti Cursor)
 
-- `/` diikuti nama skill memuat skill itu.
+- `/` membuka skill + perintah mode (`/agent`, `/plan`, `/ask`, `/debug`, `/multitask`) dan perintah built-in (`/review`, `/create-rule`, `/create-skill`, `/create-subagent`, `/create-hook`).
+- `Shift+Tab` mengganti mode.
+- Saat agent berjalan, **Enter** mengantri pesan berikutnya (FIFO). **Cmd/Ctrl+Enter** menaruh pesan di depan antrian (kirim berikutnya). Antrian bisa di-reorder atau dihapus. **Stop** / Escape membatalkan.
+- Mode Plan punya tombol **Build**. Setelah selesai, follow-up chip muncul di bawah transcript.
 - `@` menambahkan file/folder ke konteks.

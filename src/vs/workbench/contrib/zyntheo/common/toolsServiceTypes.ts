@@ -82,7 +82,7 @@ export type BuiltinToolResultType = {
 	'run_persistent_command': { result: string; resolveReason: TerminalResolveReason; },
 	'open_persistent_terminal': { persistentTerminalId: string },
 	'kill_persistent_terminal': {},
-	'spawn_subagent': { threadId: string; name: string; title: string },
+	'spawn_subagent': { threadId: string; name: string; title: string; summary: string },
 }
 
 

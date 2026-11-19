@@ -662,7 +662,7 @@ export class ToolsService implements IToolsService {
 				return `Successfully closed terminal "${params.persistentTerminalId}".`;
 			},
 			spawn_subagent: (_params, result) => {
-				return `Spawned subagent "${result.name}" in tab "${result.title}" (thread ${result.threadId}).`
+				return `Subagent "${result.name}" finished.\nSummary:\n${result.summary}`
 			},
 		}
 

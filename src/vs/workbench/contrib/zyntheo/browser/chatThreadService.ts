@@ -42,6 +42,7 @@ import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 import { IZyntheoHooksService } from '../common/zyntheoHooksService.js';
 import { IZyntheoRulesSkillsService } from '../common/zyntheoRulesService.js';
 import { formatSubagentCatalog, formatSubagentSystemSuffix, resolveSubagent } from '../common/zyntheoAgents.js';
+import { enqueueChatMessageAt, moveQueuedMessage, QueuedChatMessage, removeQueuedMessage, summarizeSubagentThread, takeNextQueuedMessage } from '../common/zyntheoChatAgent.js';
 
 
 // related to retrying when LLM message has error
@@ -125,6 +126,8 @@ export type ThreadType = {
 	kind?: 'user' | 'subagent';
 	parentThreadId?: string;
 	subagentName?: string;
+	archived?: boolean;
+	queuedMessages?: QueuedChatMessage[];
 
 	messages: ChatMessage[];
 	filesWithUserChanges: Set<string>;
@@ -226,6 +229,8 @@ const newThreadObject = (opts?: { chatMode?: ChatMode; title?: string; kind?: 'u
 		kind: opts?.kind,
 		parentThreadId: opts?.parentThreadId,
 		subagentName: opts?.subagentName,
+		archived: false,
+		queuedMessages: [],
 		messages: [],
 		chatMode: opts?.chatMode,
 		state: {
@@ -248,9 +253,11 @@ export interface IChatThreadService {
 
 	readonly state: ThreadsState;
 	readonly streamState: ThreadStreamState; // not persistent
+	readonly historyPanelOpen: boolean;
 
 	onDidChangeCurrentThread: Event<void>;
 	onDidChangeStreamState: Event<{ threadId: string }>
+	onDidToggleHistory: Event<void>;
 
 	getCurrentThread(): ThreadType;
 	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string;
@@ -261,6 +268,12 @@ export interface IChatThreadService {
 	// thread selector
 	deleteThread(threadId: string): void;
 	duplicateThread(threadId: string): void;
+	archiveThread(threadId: string): void;
+	toggleHistoryPanel(): void;
+	enqueueQueuedMessage(threadId: string, userMessage: string, position?: 'start' | 'end'): void;
+	getQueuedMessages(threadId: string): QueuedChatMessage[];
+	removeQueuedMessage(threadId: string, id: string): void;
+	moveQueuedMessage(threadId: string, id: string, direction: 'up' | 'down'): void;
 
 	// exposed getters/setters
 	// these all apply to current thread
@@ -322,8 +335,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	private readonly _onDidChangeStreamState = new Emitter<{ threadId: string }>();
 	readonly onDidChangeStreamState: Event<{ threadId: string }> = this._onDidChangeStreamState.event;
 
+	private readonly _onDidToggleHistory = new Emitter<void>();
+	readonly onDidToggleHistory: Event<void> = this._onDidToggleHistory.event;
+
 	readonly streamState: ThreadStreamState = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
+	historyPanelOpen = false
 
 	// used in checkpointing
 	// private readonly _userModifiedFilesToCheckInCheckpoints = new LRUCache<string, null>(50)
@@ -696,8 +713,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		}
 
 		if (toolName === 'spawn_subagent') {
-			const spawned = await this._spawnSubagentFromTool(threadId, toolParams as BuiltinToolCallParams['spawn_subagent'])
-			this._addMessageToThread(threadId, { role: 'tool', type: 'success', params: toolParams, result: spawned, name: toolName, content: `Spawned subagent "${spawned.name}" in tab "${spawned.title}" (thread ${spawned.threadId}). The child is running in its own chat tab.`, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._updateLatestTool(threadId, { role: 'tool', type: 'running_now', name: toolName, params: toolParams, content: 'Waiting for subagent...', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			const spawned = await this._spawnSubagentFromTool(threadId, toolParams as BuiltinToolCallParams['spawn_subagent'], { toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: spawned, name: toolName, content: `Subagent "${spawned.name}" finished.\nSummary:\n${spawned.summary}`, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 			return {}
 		}
 
@@ -789,7 +807,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		})
 	}
 
-	private async _spawnSubagentFromTool(parentThreadId: string, params: BuiltinToolCallParams['spawn_subagent']): Promise<BuiltinToolResultType['spawn_subagent']> {
+	private async _spawnSubagentFromTool(
+		parentThreadId: string,
+		params: BuiltinToolCallParams['spawn_subagent'],
+		opts: { toolId: string; rawParams: RawToolParamsObj; mcpServerName: string | undefined },
+	): Promise<BuiltinToolResultType['spawn_subagent']> {
 		const snapshot = this._rulesSkillsService.getCachedSnapshot()
 		const agent = resolveSubagent(params.name, snapshot.agents)
 		if (!agent) {
@@ -808,11 +830,23 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			parentThreadId,
 			subagentName: agent.name,
 		})
-		this._wrapRunAgentToNotify(
-			this.addUserMessageAndStreamResponse({ userMessage: params.prompt, threadId: childId }),
-			childId,
-		)
-		return { threadId: childId, name: agent.name, title }
+		this._setStreamState(parentThreadId, {
+			isRunning: 'tool',
+			interrupt: Promise.resolve(() => { void this.abortRunning(childId) }),
+			toolInfo: {
+				toolName: 'spawn_subagent',
+				toolParams: params,
+				id: opts.toolId,
+				content: 'Waiting for subagent...',
+				rawParams: opts.rawParams,
+				mcpServerName: opts.mcpServerName,
+			},
+		})
+		const childRun = this._startChatAfterUserMessage({ userMessage: params.prompt, threadId: childId })
+		this._wrapRunAgentToNotify(childRun, childId)
+		await childRun
+		const summary = summarizeSubagentThread(this.state.allThreads[childId]?.messages)
+		return { threadId: childId, name: agent.name, title, summary }
 	}
 
 
@@ -999,6 +1033,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		if (!isRunningWhenEnd) {
 			void this._hooksService.run('stop', { threadId, chatMode, nMessagesSent })
+			this._drainQueuedMessage(threadId)
 		}
 
 		// capture number of messages sent
@@ -1364,15 +1399,18 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 		this._setThreadState(threadId, { currCheckpointIdx: null }) // no longer at a checkpoint because started streaming
 
-		this._wrapRunAgentToNotify(
-			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), }),
-			threadId,
-		)
+		const run = this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), })
+		this._wrapRunAgentToNotify(run, threadId)
 
 		// scroll to bottom
 		this.state.allThreads[threadId]?.state.mountedInfo?.whenMounted.then(m => {
 			m.scrollToBottom()
 		})
+		return run
+	}
+
+	private async _startChatAfterUserMessage({ userMessage, threadId }: { userMessage: string, threadId: string }): Promise<void> {
+		await this._addUserMessageAndStreamResponse({ userMessage, threadId })
 	}
 
 
@@ -1398,8 +1436,8 @@ We only need to do it for files that were edited since `from`, ie files between 
 			this._setState({ allThreads: newThreads });
 		}
 
-		// Now call the original method to add the user message and stream the response
-		await this._addUserMessageAndStreamResponse({ userMessage, _chatSelections, threadId });
+		// Start the agent without blocking the composer; spawn_subagent awaits the inner run.
+		void this._addUserMessageAndStreamResponse({ userMessage, _chatSelections, threadId });
 
 	}
 
@@ -1729,11 +1767,20 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 	switchToThread(threadId: string) {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		if (thread.archived) {
+			this._patchThread(threadId, { archived: false })
+		}
 		const threadMode = this.state.allThreads[threadId]?.chatMode
 		if (threadMode && this._settingsService.state.globalSettings.chatMode !== threadMode) {
 			this._settingsService.setGlobalSetting('chatMode', threadMode)
 		}
 		this._setState({ currentThreadId: threadId })
+		if (this.historyPanelOpen) {
+			this.historyPanelOpen = false
+			this._onDidToggleHistory.fire()
+		}
 	}
 
 	getThreadChatMode(threadId: string): ChatMode {
@@ -1767,7 +1814,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		if (switchTo && opts?.kind !== 'subagent') {
 			for (const threadId in currentThreads) {
 				const existing = currentThreads[threadId]
-				if (existing && existing.messages.length === 0 && existing.kind !== 'subagent') {
+				if (existing && existing.messages.length === 0 && existing.kind !== 'subagent' && !existing.archived) {
 					if (requestedMode) this.setThreadChatMode(threadId, requestedMode)
 					this.switchToThread(threadId)
 					return threadId
@@ -1809,6 +1856,80 @@ We only need to do it for files that were edited since `from`, ie files between 
 		// store the updated threads
 		this._storeAllThreads(newThreads);
 		this._setState({ ...this.state, allThreads: newThreads })
+	}
+
+	archiveThread(threadId: string): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		this._patchThread(threadId, { archived: true })
+		if (this.state.currentThreadId !== threadId) {
+			return
+		}
+		const remaining = Object.values(this.state.allThreads)
+			.filter((candidate): candidate is ThreadType => !!candidate && candidate.id !== threadId && !candidate.archived)
+			.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''))
+		if (remaining[0]) {
+			this.switchToThread(remaining[0].id)
+			return
+		}
+		this.openNewThread({ switchTo: true })
+	}
+
+	toggleHistoryPanel(): void {
+		this.historyPanelOpen = !this.historyPanelOpen
+		this._onDidToggleHistory.fire()
+		this._onDidChangeCurrentThread.fire()
+	}
+
+	enqueueQueuedMessage(threadId: string, userMessage: string, position: 'start' | 'end' = 'end'): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const next = enqueueChatMessageAt(thread.queuedMessages || [], {
+			id: generateUuid(),
+			userMessage,
+		}, position)
+		this._patchThread(threadId, { queuedMessages: next })
+	}
+
+	getQueuedMessages(threadId: string): QueuedChatMessage[] {
+		return this.state.allThreads[threadId]?.queuedMessages?.slice() || []
+	}
+
+	removeQueuedMessage(threadId: string, id: string): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		this._patchThread(threadId, { queuedMessages: removeQueuedMessage(thread.queuedMessages || [], id) })
+	}
+
+	moveQueuedMessage(threadId: string, id: string, direction: 'up' | 'down'): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		this._patchThread(threadId, { queuedMessages: moveQueuedMessage(thread.queuedMessages || [], id, direction) })
+	}
+
+	private _drainQueuedMessage(threadId: string): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const { next, remaining } = takeNextQueuedMessage(thread.queuedMessages || [])
+		this._patchThread(threadId, { queuedMessages: remaining })
+		if (!next) {
+			return
+		}
+		void this.addUserMessageAndStreamResponse({ userMessage: next.userMessage, threadId })
+	}
+
+	private _patchThread(threadId: string, patch: Partial<ThreadType>): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const newThreads: ChatThreads = {
+			...this.state.allThreads,
+			[threadId]: {
+				...thread,
+				...patch,
+			}
+		}
+		this._storeAllThreads(newThreads)
+		this._setState({ allThreads: newThreads })
 	}
 
 	duplicateThread(threadId: string) {

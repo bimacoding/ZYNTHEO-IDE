@@ -459,12 +459,12 @@ export const displayInfoOfChatMode: Record<ChatMode, { name: string; detail: str
 	agent: {
 		name: 'Agent',
 		detail: 'Edits files and runs commands',
-		placeholder: '@ to mention. Describe the change to implement...',
+		placeholder: '/ for skills. @ to mention. Describe the change to implement...',
 	},
 	plan: {
 		name: 'Plan',
 		detail: 'Read-only: design an approach first',
-		placeholder: '@ to mention. Describe what you want to plan...',
+		placeholder: '/plan or @ to mention. Describe what you want to plan...',
 	},
 	debug: {
 		name: 'Debug',

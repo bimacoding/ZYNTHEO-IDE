@@ -1,9 +1,9 @@
 {
 	"nameShort": "Zyntheo",
 	"nameLong": "Zyntheo IDE",
-	"zyntheoVersion": "1.4.9",
-	"zyntheoRelease": "0044",
-	"release": "0044",
+	"zyntheoVersion": "1.5.0",
+	"zyntheoRelease": "0045",
+	"release": "0045",
 	"applicationName": "zyntheo",
 	"dataFolderName": ".zyntheo-editor",
 	"win32MutexName": "zyntheoeditor",

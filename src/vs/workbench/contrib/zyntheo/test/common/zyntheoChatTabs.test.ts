@@ -10,21 +10,21 @@ import { threadDisplayTitle, visibleAgentTabs } from '../../common/zyntheoChatTa
 suite('Zyntheo chat agent tabs', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('shows current thread, running subagent, and hides empty unused threads', () => {
+	test('shows current thread, recent chats, running subagent, and hides empty unused threads', () => {
 		const tabs = visibleAgentTabs({
 			parent: {
 				id: 'parent',
-				title: 'Server requirements',
+				title: 'Full rebranding and launch',
 				kind: 'user',
-				lastModified: '2026-01-02',
-				messages: [{ role: 'user', displayContent: 'Check server requirements' }],
+				lastModified: '2026-01-04',
+				messages: [{ role: 'user', displayContent: 'Full rebranding and launch' }],
 			},
 			child: {
 				id: 'child',
 				kind: 'subagent',
 				parentThreadId: 'parent',
 				subagentName: 'explore',
-				lastModified: '2026-01-03',
+				lastModified: '2026-01-05',
 				messages: [],
 			},
 			empty: {
@@ -33,18 +33,19 @@ suite('Zyntheo chat agent tabs', () => {
 				lastModified: '2026-01-01',
 				messages: [],
 			},
-			old: {
-				id: 'old',
+			recent: {
+				id: 'recent',
 				kind: 'user',
-				title: 'Old chat',
-				lastModified: '2025-12-01',
-				messages: [{ role: 'user', displayContent: 'history' }],
+				title: 'Diagnose and start Traefik',
+				lastModified: '2026-01-03',
+				messages: [{ role: 'user', displayContent: 'Diagnose and start Traefik' }],
 			},
 		}, 'parent', ['child']);
 
 		assert.deepStrictEqual(tabs.map(tab => `${tab.kind}:${tab.title}`), [
-			'user:Server requirements',
+			'user:Full rebranding and launch',
 			'subagent:explore',
+			'user:Diagnose and start Traefik',
 		]);
 	});
 

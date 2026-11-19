@@ -22,7 +22,7 @@ import { ChatMode, chatModes, displayInfoOfChatMode, displayInfoOfProviderName, 
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../zyntheo-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
-import { AlertTriangle, File, Ban, Bot, Check, ChevronRight, Clock, Dot, FileIcon, LoaderCircle, MessageSquare, Pencil, Plus, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Dot, FileIcon, LoaderCircle, MessageSquare, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -37,6 +37,7 @@ import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
 import { applyLiveTranscript, createImageStagingSelection, encodeBytesToBase64, getSpeechRecognitionConstructor, guessMimeType, isImageFileName, isImageMimeType, MAX_IMAGE_BYTES, SpeechRecognitionLike } from '../../../../common/chatAttachments.js';
 import { visibleAgentTabs } from '../../../../common/zyntheoChatTabs.js';
+import { applySlashCommand, followUpSuggestions, matchSlashCommands, nextChatMode, parseLeadingSlash, planBuildPrompt, shouldShowSlashMenu } from '../../../../common/zyntheoChatAgent.js';
 
 
 
@@ -1689,7 +1690,7 @@ const titleOfBuiltinToolName = {
 
 	'read_lint_errors': { done: `Read lint errors`, proposed: 'Read lint errors', running: loadingTitleWrapper('Reading lint errors') },
 	'search_in_file': { done: 'Searched in file', proposed: 'Search in file', running: loadingTitleWrapper('Searching in file') },
-	'spawn_subagent': { done: 'Spawned agent', proposed: 'Spawn agent', running: loadingTitleWrapper('Spawning agent') },
+	'spawn_subagent': { done: 'Subagent finished', proposed: 'Spawn agent', running: loadingTitleWrapper('Waiting for subagent') },
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 
 
@@ -2731,15 +2732,26 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			const isRejected = toolMessage.type === 'rejected'
 			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon: null, isRejected }
 
-			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') {
+			if (toolMessage.type === 'tool_request') {
 				return null
+			}
+
+			if (toolMessage.type === 'running_now') {
+				componentParams.desc1 = toolMessage.params.name
+				componentParams.info = 'Running in its own chat tab'
+				return <ToolHeaderWrapper {...componentParams} />
 			}
 
 			if (toolMessage.type === 'success') {
 				const childId = toolMessage.result.threadId
 				componentParams.desc1 = toolMessage.result.title || toolMessage.result.name
-				componentParams.info = 'Opens in its own chat tab'
+				componentParams.info = 'Open subagent tab'
 				componentParams.onClick = () => chatThreadsService.switchToThread(childId)
+				if (toolMessage.result.summary) {
+					componentParams.bottomChildren = <BottomChildren title='Summary'>
+						<div className='text-xs whitespace-pre-wrap text-zyntheo-fg-2'>{toolMessage.result.summary}</div>
+					</BottomChildren>
+				}
 			}
 			else if (toolMessage.type === 'tool_error') {
 				componentParams.bottomChildren = <BottomChildren title='Error'>
@@ -3185,10 +3197,104 @@ const EditToolSoFar = ({ toolCallSoFar, }: { toolCallSoFar: RawToolCallObj }) =>
 }
 
 
+const ComposerSlashMenu = ({
+	textAreaRef,
+	textAreaFnsRef,
+	onSubmit,
+}: {
+	textAreaRef: React.RefObject<HTMLTextAreaElement | null>
+	textAreaFnsRef: React.RefObject<TextAreaFns | null>
+	onSubmit: (forced?: string) => void
+}) => {
+	const accessor = useAccessor()
+	const chatThreadsService = accessor.get('IChatThreadService')
+	const settingsService = accessor.get('IZyntheoSettingsService')
+	const skills = accessor.get('IZyntheoRulesSkillsService').getCachedSnapshot().skills
+	const [query, setQuery] = useState(textAreaRef.current?.value || '')
+	const [selectedIdx, setSelectedIdx] = useState(0)
+
+	useEffect(() => {
+		const node = textAreaRef.current
+		if (!node) return
+		const sync = () => setQuery(node.value)
+		const onKey = (event: globalThis.KeyboardEvent) => {
+			if (!shouldShowSlashMenu(node.value)) return
+			if (event.key === 'ArrowDown') {
+				event.preventDefault()
+				setSelectedIdx(index => index + 1)
+			} else if (event.key === 'ArrowUp') {
+				event.preventDefault()
+				setSelectedIdx(index => Math.max(0, index - 1))
+			}
+		}
+		node.addEventListener('input', sync)
+		node.addEventListener('keydown', onKey)
+		return () => {
+			node.removeEventListener('input', sync)
+			node.removeEventListener('keydown', onKey)
+		}
+	}, [textAreaRef])
+
+	const commands = useMemo(() => shouldShowSlashMenu(query) ? matchSlashCommands(query, skills) : [], [query, skills])
+	useEffect(() => { setSelectedIdx(0) }, [query])
+	useEffect(() => {
+		if (!commands.length) return
+		setSelectedIdx(index => Math.min(index, commands.length - 1))
+	}, [commands.length])
+
+	if (!commands.length) return null
+
+	const apply = (command = commands[selectedIdx]) => {
+		if (!command) return
+		const applied = applySlashCommand(query, command)
+		if (applied.mode) {
+			const threadId = chatThreadsService.state.currentThreadId
+			settingsService.setGlobalSetting('chatMode', applied.mode)
+			chatThreadsService.setThreadChatMode(threadId, applied.mode)
+		}
+		textAreaFnsRef.current?.setValue(applied.text)
+		textAreaRef.current?.focus()
+		if (command.kind === 'builtin' && !applied.text.includes('/')) {
+			onSubmit(applied.text)
+		}
+	}
+
+	return (
+		<div
+			className='absolute left-0 right-0 bottom-full mb-1 z-[40] border border-zyntheo-border-2 bg-zyntheo-bg-1 rounded-md shadow-lg overflow-hidden'
+			onMouseDown={(event) => event.preventDefault()}
+			onKeyDown={(event) => {
+				if (event.key === 'ArrowDown') {
+					event.preventDefault()
+					setSelectedIdx(index => Math.min(commands.length - 1, index + 1))
+				} else if (event.key === 'ArrowUp') {
+					event.preventDefault()
+					setSelectedIdx(index => Math.max(0, index - 1))
+				} else if (event.key === 'Enter') {
+					event.preventDefault()
+					apply()
+				}
+			}}
+		>
+			{commands.map((command, index) => (
+				<button
+					key={command.id}
+					type='button'
+					className={`w-full text-left px-3 py-1.5 text-[12px] flex items-center justify-between gap-3 ${index === selectedIdx ? 'bg-zyntheo-bg-2 text-zyntheo-fg-1' : 'text-zyntheo-fg-2'}`}
+					onMouseEnter={() => setSelectedIdx(index)}
+					onClick={() => apply(command)}
+				>
+					<span className='font-medium'>{command.label}</span>
+					<span className='truncate opacity-70'>{command.detail}</span>
+				</button>
+			))}
+		</div>
+	)
+}
+
 const AgentTabsBar = () => {
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
-	const commandService = accessor.get('ICommandService')
 	const chatThreadsState = useChatThreadsState()
 	const streamState = useFullChatThreadsStreamState()
 
@@ -3200,29 +3306,22 @@ const AgentTabsBar = () => {
 		return visibleAgentTabs(chatThreadsState.allThreads || {}, chatThreadsState.currentThreadId, runningIds)
 	}, [chatThreadsState.allThreads, chatThreadsState.currentThreadId, runningIds])
 
-	const openNewAgent = useCallback(() => {
-		chatThreadsService.openNewThread({ switchTo: true })
-		void chatThreadsService.focusCurrentChat()
-	}, [chatThreadsService])
-
 	return (
-		<div className='flex items-center gap-1 px-2 pt-1 pb-0.5 min-h-[32px] border-b border-zyntheo-border-1 bg-zyntheo-bg-2/40'>
-			<div className='flex items-center gap-1 overflow-x-auto min-w-0 flex-1 scrollbar-hide'>
+		<div className='flex items-stretch h-8 min-h-[32px] border-b border-zyntheo-border-1'>
+			<div className='flex items-stretch overflow-x-auto min-w-0 flex-1 scrollbar-hide'>
 				{tabs.map(tab => {
 					const running = streamState[tab.id]?.isRunning
 					const isActive = tab.id === chatThreadsState.currentThreadId
-					const statusColor = running === 'awaiting_user' ? 'yellow' : running ? 'orange' : 'dark'
-					const TabIcon = tab.kind === 'subagent' ? Bot : MessageSquare
 					return (
 						<button
 							key={tab.id}
 							type='button'
 							className={`
-								group flex items-center gap-1 max-w-[168px] h-6 px-1.5 rounded-md text-[11px] leading-none
-								border transition-colors flex-shrink-0
+								group flex items-center gap-1.5 h-full max-w-[188px] px-3 text-[12px] leading-none
+								border-0 border-r border-zyntheo-border-1/70 transition-colors flex-shrink-0
 								${isActive
-									? 'bg-zyntheo-bg-1 border-zyntheo-border-1 text-zyntheo-fg-1'
-									: 'bg-transparent border-transparent text-zyntheo-fg-3 hover:bg-zyntheo-bg-1/70 hover:text-zyntheo-fg-1'}
+									? 'bg-zyntheo-bg-1 text-zyntheo-fg-1'
+									: 'bg-transparent text-zyntheo-fg-3 hover:text-zyntheo-fg-1'}
 							`}
 							onClick={() => chatThreadsService.switchToThread(tab.id)}
 							data-tooltip-id='zyntheo-tooltip'
@@ -3230,54 +3329,25 @@ const AgentTabsBar = () => {
 							data-tooltip-place='bottom'
 						>
 							{running && running !== 'awaiting_user'
-								? <LoaderCircle size={11} className='animate-spin flex-shrink-0' />
-								: <TabIcon size={11} className='flex-shrink-0 opacity-80' />}
+								? <LoaderCircle size={13} className='animate-spin flex-shrink-0 opacity-80' />
+								: <MessageSquare size={13} className='flex-shrink-0 opacity-80' />}
 							<span className='truncate'>{tab.title}</span>
-							<StatusIndicator className='mx-0 scale-75' indicatorColor={statusColor} title={running === 'awaiting_user' ? 'Needs approval' : running ? 'Running' : 'Idle'} />
-							<span
-								className={`ml-0.5 rounded p-0.5 hover:bg-zyntheo-bg-2 ${isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'}`}
-								onClick={(event) => {
-									event.stopPropagation()
-									const remaining = Object.keys(chatThreadsState.allThreads || {}).filter(id => id !== tab.id)
-									chatThreadsService.deleteThread(tab.id)
-									if (isActive) {
-										if (remaining[0]) {
-											chatThreadsService.switchToThread(remaining[0])
-										} else {
-											chatThreadsService.openNewThread({ switchTo: true })
-										}
-									}
-								}}
-								aria-label={`Close ${tab.title}`}
-							>
-								<X size={10} />
-							</span>
+							{isActive && (
+								<span
+									className='ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100 hover:bg-zyntheo-bg-2'
+									onClick={(event) => {
+										event.stopPropagation()
+										chatThreadsService.archiveThread(tab.id)
+									}}
+									aria-label={`Close ${tab.title}`}
+								>
+									<X size={11} />
+								</span>
+							)}
 						</button>
 					)
 				})}
 			</div>
-			<button
-				type='button'
-				className='flex items-center justify-center h-6 w-6 rounded-md text-zyntheo-fg-3 hover:text-zyntheo-fg-1 hover:bg-zyntheo-bg-1 flex-shrink-0'
-				onClick={openNewAgent}
-				data-tooltip-id='zyntheo-tooltip'
-				data-tooltip-content='New Agent'
-				data-tooltip-place='bottom'
-				aria-label='New Agent'
-			>
-				<Plus size={14} />
-			</button>
-			<button
-				type='button'
-				className='flex items-center justify-center h-6 w-6 rounded-md text-zyntheo-fg-3 hover:text-zyntheo-fg-1 hover:bg-zyntheo-bg-1 flex-shrink-0'
-				onClick={() => commandService.executeCommand('zyntheo.historyAction')}
-				data-tooltip-id='zyntheo-tooltip'
-				data-tooltip-content='Past chats'
-				data-tooltip-place='bottom'
-				aria-label='Past chats'
-			>
-				<Clock size={13} />
-			</button>
 		</div>
 	)
 }
@@ -3322,17 +3392,40 @@ export const SidebarChat = () => {
 
 	const sidebarRef = useRef<HTMLDivElement>(null)
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null)
-	const onSubmit = useCallback(async (_forceSubmit?: string) => {
+	const onSubmit = useCallback(async (_forceSubmit?: string, opts?: { sendNow?: boolean }) => {
 
 		if (isDisabled && !_forceSubmit) return
 
 		const threadId = chatThreadsService.state.currentThreadId
-		const userMessage = _forceSubmit || textAreaRef.current?.value || ''
+		let userMessage = _forceSubmit || textAreaRef.current?.value || ''
 		const currentMode = normalizeChatMode(chatThreadsService.getThreadChatMode(threadId) || settingsState.globalSettings.chatMode)
 		const currentSelections = selections
 		const shouldSpawnParallel = currentMode === 'multitask' && !!isRunning
+		const parsedSlash = parseLeadingSlash(userMessage)
+		const slash = parsedSlash
+			? matchSlashCommands(`/${parsedSlash.token}`, accessor.get('IZyntheoRulesSkillsService').getCachedSnapshot().skills)
+				.find(command => command.token.toLowerCase() === parsedSlash.token.toLowerCase())
+			: undefined
+		if (slash) {
+			const applied = applySlashCommand(userMessage, slash)
+			if (applied.mode) {
+				accessor.get('IZyntheoSettingsService').setGlobalSetting('chatMode', applied.mode)
+				chatThreadsService.setThreadChatMode(threadId, applied.mode)
+			}
+			userMessage = applied.text
+			if (!userMessage && slash.kind !== 'builtin') {
+				textAreaFnsRef.current?.setValue(applied.text)
+				return
+			}
+		}
 
-		if (isRunning && !shouldSpawnParallel) return
+		if (isRunning && !shouldSpawnParallel) {
+			chatThreadsService.enqueueQueuedMessage(threadId, userMessage, opts?.sendNow ? 'start' : 'end')
+			setSelections([])
+			textAreaFnsRef.current?.setValue('')
+			textAreaRef.current?.focus()
+			return
+		}
 
 		let targetThreadId = threadId
 		if (shouldSpawnParallel) {
@@ -3349,7 +3442,7 @@ export const SidebarChat = () => {
 		textAreaFnsRef.current?.setValue('')
 		textAreaRef.current?.focus() // focus input after submit
 
-	}, [chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState, previousMessages.length, selections])
+	}, [accessor, chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState, previousMessages.length, selections])
 
 	const onAbort = async () => {
 		const threadId = currentThread.id
@@ -3423,6 +3516,9 @@ export const SidebarChat = () => {
 			: null
 		: null
 
+	const lastAssistant = [...previousMessages].reverse().find(message => message.role === 'assistant')
+	const lastUser = [...previousMessages].reverse().find(message => message.role === 'user')
+
 	const messagesHTML = <ScrollToBottomContainer
 		key={'messages' + chatThreadsState.currentThreadId} // force rerender on all children if id changes
 		scrollContainerRef={scrollContainerRef}
@@ -3461,6 +3557,34 @@ export const SidebarChat = () => {
 				<WarningBox className='text-sm my-2 mx-4' onClick={() => { commandService.executeCommand(ZYNTHEO_OPEN_SETTINGS_ACTION_ID) }} text='Open settings' />
 			</div>
 		}
+
+		{!isRunning && previousMessages.length > 0 && (
+			<div className='flex flex-wrap gap-1.5 pt-2'>
+				{currentChatMode === 'plan' && (
+					<button
+						type='button'
+						className='text-[11px] px-2 py-1 rounded-full bg-zyntheo-bg-2 text-zyntheo-fg-1 border border-zyntheo-border-2 hover:border-zyntheo-border-1'
+						onClick={() => onSubmit(planBuildPrompt())}
+					>
+						Build
+					</button>
+				)}
+				{followUpSuggestions({
+					mode: currentChatMode,
+					lastAssistant: lastAssistant?.role === 'assistant' ? lastAssistant.displayContent : undefined,
+					lastUser: lastUser?.role === 'user' ? lastUser.displayContent : undefined,
+				}).map(suggestion => (
+					<button
+						key={suggestion}
+						type='button'
+						className='text-[11px] px-2 py-1 rounded-full bg-zyntheo-bg-1 text-zyntheo-fg-3 border border-zyntheo-border-2 hover:text-zyntheo-fg-1'
+						onClick={() => onSubmit(suggestion)}
+					>
+						{suggestion}
+					</button>
+				))}
+			</div>
+		)}
 	</ScrollToBottomContainer>
 
 
@@ -3468,12 +3592,36 @@ export const SidebarChat = () => {
 		setInstructionsAreEmpty(!newStr)
 	}, [setInstructionsAreEmpty])
 	const onKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
+		if (e.key === 'Tab' && e.shiftKey) {
+			e.preventDefault()
+			const nextMode = nextChatMode(currentChatMode)
+			accessor.get('IZyntheoSettingsService').setGlobalSetting('chatMode', nextMode)
+			chatThreadsService.setThreadChatMode(threadId, nextMode)
+			return
+		}
 		if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-			onSubmit()
+			const sendNow = e.metaKey || e.ctrlKey
+			const currentText = textAreaRef.current?.value || ''
+			const slashHits = shouldShowSlashMenu(currentText)
+				? matchSlashCommands(currentText, accessor.get('IZyntheoRulesSkillsService').getCachedSnapshot().skills)
+				: []
+			if (slashHits[0] && !sendNow) {
+				const applied = applySlashCommand(currentText, slashHits[0])
+				if (applied.mode) {
+					accessor.get('IZyntheoSettingsService').setGlobalSetting('chatMode', applied.mode)
+					chatThreadsService.setThreadChatMode(threadId, applied.mode)
+				}
+				textAreaFnsRef.current?.setValue(applied.text)
+				if (slashHits[0].kind === 'builtin') {
+					onSubmit(applied.text)
+				}
+				return
+			}
+			onSubmit(undefined, { sendNow })
 		} else if (e.key === 'Escape' && isRunning) {
 			onAbort()
 		}
-	}, [onSubmit, onAbort, isRunning])
+	}, [accessor, chatThreadsService, currentChatMode, onSubmit, onAbort, isRunning, threadId])
 
 	const inputChatArea = <ZyntheoChatArea
 		featureName='Chat'
@@ -3501,6 +3649,7 @@ export const SidebarChat = () => {
 			fnsRef={textAreaFnsRef}
 			multiline={true}
 		/>
+		<ComposerSlashMenu textAreaRef={textAreaRef} textAreaFnsRef={textAreaFnsRef} onSubmit={onSubmit} />
 
 	</ZyntheoChatArea>
 
@@ -3538,10 +3687,65 @@ export const SidebarChat = () => {
 
 
 
+	const queuedMessages = currentThread.queuedMessages || []
+	const historyOpen = chatThreadsService.historyPanelOpen
+
+	const queueHTML = queuedMessages.length ? (
+		<div className='px-3 pb-1 flex flex-col gap-1'>
+			<div className='text-[10px] uppercase tracking-wide text-zyntheo-fg-3'>Queued</div>
+			{queuedMessages.map((item, index) => (
+				<div key={item.id} className='flex items-center justify-between gap-2 text-[12px] px-2 py-1 rounded bg-zyntheo-bg-2 text-zyntheo-fg-2'>
+					<span className='truncate'>{item.userMessage}</span>
+					<div className='flex items-center gap-1 flex-shrink-0'>
+						<button
+							type='button'
+							className='opacity-70 hover:opacity-100 disabled:opacity-30'
+							disabled={index === 0}
+							onClick={() => chatThreadsService.moveQueuedMessage(threadId, item.id, 'up')}
+							aria-label='Move queued message up'
+						>
+							<ChevronUp size={11} />
+						</button>
+						<button
+							type='button'
+							className='opacity-70 hover:opacity-100 disabled:opacity-30'
+							disabled={index === queuedMessages.length - 1}
+							onClick={() => chatThreadsService.moveQueuedMessage(threadId, item.id, 'down')}
+							aria-label='Move queued message down'
+						>
+							<ChevronDown size={11} />
+						</button>
+						<button
+							type='button'
+							className='opacity-70 hover:opacity-100'
+							onClick={() => chatThreadsService.removeQueuedMessage(threadId, item.id)}
+							aria-label='Remove queued message'
+						>
+							<X size={11} />
+						</button>
+					</div>
+				</div>
+			))}
+		</div>
+	) : null
+
+	const historyPanelHTML = historyOpen ? (
+		<div className='absolute inset-0 z-30 bg-zyntheo-bg-1/95 backdrop-blur-sm p-3 overflow-auto'>
+			<div className='flex items-center justify-between mb-2'>
+				<div className='text-sm text-zyntheo-fg-1'>Past chats</div>
+				<button type='button' className='text-zyntheo-fg-3 hover:text-zyntheo-fg-1' onClick={() => chatThreadsService.toggleHistoryPanel()}>
+					<X size={14} />
+				</button>
+			</div>
+			<PastThreadsList />
+		</div>
+	) : null
+
 	const threadPageInput = <div key={'input' + chatThreadsState.currentThreadId}>
 		<div className='px-4'>
 			<CommandBarInChat />
 		</div>
+		{queueHTML}
 		<div className='px-2 pb-2'>
 			{inputChatArea}
 		</div>
@@ -3555,8 +3759,9 @@ export const SidebarChat = () => {
 
 	const landingPageContent = <div
 		ref={sidebarRef}
-		className='w-full h-full max-h-full flex flex-col overflow-hidden'
+		className='w-full h-full max-h-full flex flex-col overflow-hidden relative'
 	>
+		{historyPanelHTML}
 		<ErrorBoundary>
 			<AgentTabsBar />
 		</ErrorBoundary>
@@ -3595,8 +3800,9 @@ export const SidebarChat = () => {
 	// </div>
 	const threadPageContent = <div
 		ref={sidebarRef}
-		className='w-full h-full flex flex-col overflow-hidden'
+		className='w-full h-full flex flex-col overflow-hidden relative'
 	>
+		{historyPanelHTML}
 		<ErrorBoundary>
 			<AgentTabsBar />
 		</ErrorBoundary>

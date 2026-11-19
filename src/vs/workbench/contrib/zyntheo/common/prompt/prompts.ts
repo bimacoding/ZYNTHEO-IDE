@@ -341,7 +341,7 @@ export const builtinTools: {
 
 	spawn_subagent: {
 		name: 'spawn_subagent',
-		description: `Spawn a child agent in its own chat tab. Use for a focused parallel investigation or implementation. Built-in names: explore (read-only), plan (read-only), debug, generalPurpose. Custom names come from .zyntheo/agents/*.md.`,
+		description: `Spawn a child agent in its own chat tab and wait for its summary. Use for a focused investigation or implementation. Built-in names: explore (read-only), plan (read-only), debug, generalPurpose. Custom names come from .zyntheo/agents/*.md.`,
 		params: {
 			name: { description: 'Subagent name: explore | plan | debug | generalPurpose | a custom .zyntheo/agents name.' },
 			prompt: { description: 'The complete task for the subagent. Include enough context that it can work independently.' },
@@ -510,7 +510,7 @@ ${directoryStr}
 - Risks, edge cases, and open questions
 - A suggested verification path`)
 		details.push(`Ask clarifying questions when requirements are ambiguous or there are significant trade-offs. Do not start coding.`)
-		details.push(`End by telling the user they can switch to Agent mode when they want you to implement the plan.`)
+		details.push(`End by telling the user they can press Build (or switch to Agent mode) when they want you to implement the plan.`)
 	}
 
 	if (mode === 'debug') {
@@ -545,7 +545,7 @@ Here's an example of a good code block:\n${chatSuggestionDiffExample}`)
 	details.push(`Always use MARKDOWN to format lists, bullet points, etc. Do NOT write tables.`)
 	details.push(`Follow project rules in \`.zyntheo/rules\` (and user rules in \`~/.zyntheo/rules\`). When a listed skill is relevant, read and follow \`.zyntheo/skills/<name>/SKILL.md\`.`)
 	if (canWrite) {
-		details.push(`You can spawn a child agent with spawn_subagent. The child appears as its own chat tab. Use explore for read-only investigation, plan for planning, debug for bugs, generalPurpose for a focused coding task, or a custom name from .zyntheo/agents.`)
+		details.push(`You can spawn a child agent with spawn_subagent. The child appears as its own chat tab. Wait for the child's summary before continuing. Use explore for read-only investigation, plan for planning, debug for bugs, generalPurpose for a focused coding task, or a custom name from .zyntheo/agents.`)
 	}
 	details.push(`Today's date is ${new Date().toDateString()}.`)
 

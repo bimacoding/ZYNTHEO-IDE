@@ -12,6 +12,7 @@ export type AgentTabThreadLike = {
 	subagentName?: string
 	parentThreadId?: string
 	lastModified?: string
+	archived?: boolean
 	messages?: { role: string; displayContent?: string; content?: string }[]
 }
 
@@ -52,50 +53,63 @@ export function isEmptyAgentThread(thread: AgentTabThreadLike | undefined): bool
 	return !thread?.messages?.some(message => message.role === 'user' || message.role === 'assistant')
 }
 
+const MAX_VISIBLE_AGENT_TABS = 10
+
 export function visibleAgentTabs(
 	allThreads: Record<string, AgentTabThreadLike | undefined>,
 	currentThreadId: string,
 	runningThreadIds: string[] = [],
 ): AgentTabInfo[] {
 	const running = new Set(runningThreadIds)
-	const tabs: AgentTabInfo[] = []
-	const seen = new Set<string>()
-
 	const current = allThreads[currentThreadId]
 	const familyRootId = current?.parentThreadId || currentThreadId
 
-	const consider = (thread: AgentTabThreadLike | undefined) => {
-		if (!thread || seen.has(thread.id)) {
-			return
-		}
-		const empty = isEmptyAgentThread(thread)
-		const isCurrent = thread.id === currentThreadId
-		const isRunning = running.has(thread.id)
+	const toInfo = (thread: AgentTabThreadLike): AgentTabInfo => {
 		const isSubagent = thread.kind === 'subagent' || !!thread.parentThreadId
-		const inFamily = thread.id === familyRootId || thread.parentThreadId === familyRootId
-		if (!isCurrent && !isRunning && !inFamily) {
-			return
-		}
-		if (!isCurrent && empty && !isRunning && !isSubagent) {
-			return
-		}
-		seen.add(thread.id)
-		tabs.push({
+		return {
 			id: thread.id,
 			title: threadDisplayTitle(thread, isSubagent ? (thread.subagentName || 'Subagent') : 'New Agent'),
 			kind: isSubagent ? 'subagent' : 'user',
 			parentThreadId: thread.parentThreadId,
 			subagentName: thread.subagentName,
-			isEmpty: empty,
-		})
+			isEmpty: isEmptyAgentThread(thread),
+		}
 	}
 
-	consider(allThreads[currentThreadId])
-	const rest = Object.values(allThreads)
-		.filter((thread): thread is AgentTabThreadLike => !!thread)
-		.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''))
-	for (const thread of rest) {
-		consider(thread)
+	const shouldShow = (thread: AgentTabThreadLike) => {
+		const empty = isEmptyAgentThread(thread)
+		const isCurrent = thread.id === currentThreadId
+		const isRunning = running.has(thread.id)
+		const isSubagent = thread.kind === 'subagent' || !!thread.parentThreadId
+		const inFamily = thread.id === familyRootId || thread.parentThreadId === familyRootId
+		if (thread.archived && !isCurrent && !isRunning) {
+			return false
+		}
+		if (isCurrent || isRunning) {
+			return true
+		}
+		if (isSubagent) {
+			return inFamily
+		}
+		return !empty
 	}
-	return tabs
+
+	const shown = Object.values(allThreads)
+		.filter((thread): thread is AgentTabThreadLike => !!thread && shouldShow(thread))
+		.sort((a, b) => {
+			if (a.id === currentThreadId) {
+				return -1
+			}
+			if (b.id === currentThreadId) {
+				return 1
+			}
+			const aFamily = a.id === familyRootId || a.parentThreadId === familyRootId
+			const bFamily = b.id === familyRootId || b.parentThreadId === familyRootId
+			if (aFamily !== bFamily) {
+				return aFamily ? -1 : 1
+			}
+			return (b.lastModified || '').localeCompare(a.lastModified || '')
+		})
+
+	return shown.slice(0, MAX_VISIBLE_AGENT_TABS).map(toInfo)
 }

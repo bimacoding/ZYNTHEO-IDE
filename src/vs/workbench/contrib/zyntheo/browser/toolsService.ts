@@ -363,6 +363,14 @@ export class ToolsService implements IToolsService {
 				const persistentTerminalId = validateProposedTerminalId(terminalIdUnknown);
 				return { persistentTerminalId };
 			},
+			spawn_subagent: (params: RawToolParamsObj) => {
+				const name = validateStr('name', params.name)
+				const prompt = validateStr('prompt', params.prompt)
+				const readonly = typeof params.readonly === 'boolean'
+					? params.readonly
+					: validateBoolean(params.readonly, { default: false })
+				return { name, prompt, readonly }
+			},
 
 		}
 
@@ -547,6 +555,9 @@ export class ToolsService implements IToolsService {
 				await this.terminalToolService.killPersistentTerminal(persistentTerminalId)
 				return { result: {} }
 			},
+			spawn_subagent: async () => {
+				throw new Error('spawn_subagent is handled by the chat agent loop.')
+			},
 		}
 
 
@@ -649,6 +660,9 @@ export class ToolsService implements IToolsService {
 			},
 			kill_persistent_terminal: (params, _result) => {
 				return `Successfully closed terminal "${params.persistentTerminalId}".`;
+			},
+			spawn_subagent: (_params, result) => {
+				return `Spawned subagent "${result.name}" in tab "${result.title}" (thread ${result.threadId}).`
 			},
 		}
 

@@ -96,3 +96,6 @@ import '../common/zyntheoModelService.js'
 
 // project/user rules and skills (.zyntheo/rules, .zyntheo/skills)
 import '../common/zyntheoRulesService.js'
+
+// lifecycle hooks (.zyntheo/hooks.json)
+import '../common/zyntheoHooksService.js'

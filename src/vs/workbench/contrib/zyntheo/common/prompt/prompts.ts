@@ -337,8 +337,17 @@ export const builtinTools: {
 		name: 'kill_persistent_terminal',
 		description: `Interrupts and closes a persistent terminal that you opened with open_persistent_terminal.`,
 		params: { persistent_terminal_id: { description: `The ID of the persistent terminal.` } }
-	}
+	},
 
+	spawn_subagent: {
+		name: 'spawn_subagent',
+		description: `Spawn a child agent in its own chat tab. Use for a focused parallel investigation or implementation. Built-in names: explore (read-only), plan (read-only), debug, generalPurpose. Custom names come from .zyntheo/agents/*.md.`,
+		params: {
+			name: { description: 'Subagent name: explore | plan | debug | generalPurpose | a custom .zyntheo/agents name.' },
+			prompt: { description: 'The complete task for the subagent. Include enough context that it can work independently.' },
+			readonly: { description: 'Optional. true to force read-only (Ask) mode.' },
+		}
+	}
 
 	// go_to_definition
 	// go_to_usages
@@ -439,7 +448,7 @@ Please assist the user with their query.`
 }
 
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, rulesSkillsInstructions }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, rulesSkillsInstructions?: string }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, rulesSkillsInstructions, extraSystemSuffix }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, rulesSkillsInstructions?: string, extraSystemSuffix?: string }) => {
 	const header = headerOfChatMode(mode)
 	const canWrite = chatModeAllowsWrites(mode)
 	const showPersistentTerminals = canWrite && persistentTerminalIDs.length !== 0
@@ -535,6 +544,9 @@ Here's an example of a good code block:\n${chatSuggestionDiffExample}`)
 	details.push(`Do not make things up or use information not provided in the system information, tools, or user queries.`)
 	details.push(`Always use MARKDOWN to format lists, bullet points, etc. Do NOT write tables.`)
 	details.push(`Follow project rules in \`.zyntheo/rules\` (and user rules in \`~/.zyntheo/rules\`). When a listed skill is relevant, read and follow \`.zyntheo/skills/<name>/SKILL.md\`.`)
+	if (canWrite) {
+		details.push(`You can spawn a child agent with spawn_subagent. The child appears as its own chat tab. Use explore for read-only investigation, plan for planning, debug for bugs, generalPurpose for a focused coding task, or a custom name from .zyntheo/agents.`)
+	}
 	details.push(`Today's date is ${new Date().toDateString()}.`)
 
 	const importantDetails = (`Important notes:
@@ -546,6 +558,7 @@ ${details.map((d, i) => `${i + 1}. ${d}`).join('\n\n')}`)
 	ansStrs.push(header)
 	ansStrs.push(sysInfo)
 	if (rulesSkillsInstructions) ansStrs.push(rulesSkillsInstructions)
+	if (extraSystemSuffix) ansStrs.push(extraSystemSuffix)
 	if (toolDefinitions) ansStrs.push(toolDefinitions)
 	ansStrs.push(importantDetails)
 	ansStrs.push(fsInfo)

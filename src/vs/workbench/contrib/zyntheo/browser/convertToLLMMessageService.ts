@@ -15,6 +15,7 @@ import { IDirectoryStrService } from '../common/directoryStrService.js';
 import { ITerminalToolService } from './terminalToolService.js';
 import { ToolName } from '../common/toolsServiceTypes.js';
 import { IMCPService } from '../common/mcpService.js';
+import { formatSubagentCatalog } from '../common/zyntheoAgents.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ChatImageAttachment, LLMImageFormat, MAX_IMAGE_BYTES, collectImagesFromSelections, materializeUserMessageContent } from '../common/chatAttachments.js';
 import { IZyntheoRulesSkillsService } from '../common/zyntheoRulesService.js';
@@ -588,7 +589,7 @@ const prepareMessages = (params: {
 export interface IConvertToLLMMessageService {
 	readonly _serviceBrand: undefined;
 	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined }
-	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
+	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null, extraSystemSuffix?: string }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
 	prepareFIMMessage(opts: { messages: LLMFIMMessage, }): { prefix: string, suffix: string, stopTokens: string[] }
 }
 
@@ -627,7 +628,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 
 	// system message
-	private _generateChatMessagesSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, userQuery?: string) => {
+	private _generateChatMessagesSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, userQuery?: string, extraSystemSuffix?: string) => {
 		const workspaceFolders = this.workspaceContextService.getWorkspace().folders.map(f => f.uri.fsPath)
 
 		const openedURIs = this.modelService.getModels().filter(m => m.isAttachedToEditor()).map(m => m.uri.fsPath) || [];
@@ -647,7 +648,13 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			activePath: activeURI,
 			userQuery,
 		})
-		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools, includeXMLToolDefinitions, rulesSkillsInstructions })
+		const snapshot = this.zyntheoRulesSkillsService.getCachedSnapshot()
+		const catalog = formatSubagentCatalog(snapshot.agents)
+		const extra = [
+			catalog ? `<zyntheo_subagents>\nAvailable subagents (spawn with spawn_subagent):\n${catalog}\n</zyntheo_subagents>` : '',
+			extraSystemSuffix || '',
+		].filter(Boolean).join('\n\n') || undefined
+		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools, includeXMLToolDefinitions, rulesSkillsInstructions, extraSystemSuffix: extra })
 		return systemMessage
 	}
 
@@ -732,7 +739,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		})
 		return { messages, separateSystemMessage };
 	}
-	prepareLLMChatMessages: IConvertToLLMMessageService['prepareLLMChatMessages'] = async ({ chatMessages, chatMode, modelSelection }) => {
+	prepareLLMChatMessages: IConvertToLLMMessageService['prepareLLMChatMessages'] = async ({ chatMessages, chatMode, modelSelection, extraSystemSuffix }) => {
 		if (modelSelection === null) return { messages: [], separateSystemMessage: undefined }
 
 		const { overridesOfModel } = this.zyntheoSettingsService.state
@@ -746,7 +753,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 		const { disableSystemMessage } = this.zyntheoSettingsService.state.globalSettings;
 		const lastUserQuery = [...chatMessages].reverse().find(m => m.role === 'user')?.displayContent || [...chatMessages].reverse().find(m => m.role === 'user')?.content
-		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat, lastUserQuery)
+		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat, lastUserQuery, extraSystemSuffix)
 		const systemMessage = disableSystemMessage ? '' : fullSystemMessage;
 
 		const modelSelectionOptions = this.zyntheoSettingsService.state.optionsOfModelSelection['Chat'][modelSelection.providerName]?.[modelSelection.modelName]

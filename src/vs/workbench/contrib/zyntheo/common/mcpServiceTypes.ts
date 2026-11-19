@@ -131,6 +131,17 @@ export interface MCPConfigFileJSON {
 	mcpServers: Record<string, MCPConfigFileEntryJSON>;
 }
 
+export function mergeMCPConfigFiles(configs: Array<MCPConfigFileJSON | null | undefined>): MCPConfigFileJSON {
+	const mcpServers: MCPConfigFileJSON['mcpServers'] = {}
+	for (const config of configs) {
+		if (!config?.mcpServers) {
+			continue
+		}
+		Object.assign(mcpServers, config.mcpServers)
+	}
+	return { mcpServers }
+}
+
 
 // SERVER EVENT TYPES ------------------------------------------
 

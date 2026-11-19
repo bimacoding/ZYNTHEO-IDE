@@ -20,6 +20,15 @@ Required notices are retained in:
 - Fast Apply / Slow Apply code edits with reviewable diffs
 - Autocomplete (FIM), Ctrl+K quick edit, Ctrl+L chat
 - Full VS Code-compatible editor, extensions, terminal, git, and debug
+- Cursor-style agent: Rules, Skills, Subagents, Hooks, MCP, and multi-agent chat tabs
+
+## Linux
+
+Cara jalankan paket rilis (AppImage, `.deb`, `.rpm`, tarball portable): [`docs/LINUX-INSTALL.md`](docs/LINUX-INSTALL.md).
+
+## Agent
+
+Cara kerja Rules / Skills / Subagents / Hooks / MCP: [`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md).
 
 ## Develop
 

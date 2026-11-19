@@ -16,7 +16,7 @@ import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj }
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { ChatMode, FeatureName, ModelSelection, ModelSelectionOptions, normalizeChatMode } from '../common/zyntheoSettingsTypes.js';
 import { IZyntheoSettingsService } from '../common/zyntheoSettingsService.js';
-import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
+import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolResultType, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { IToolsService } from './toolsService.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
@@ -39,6 +39,9 @@ import { IDirectoryStrService } from '../common/directoryStrService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
+import { IZyntheoHooksService } from '../common/zyntheoHooksService.js';
+import { IZyntheoRulesSkillsService } from '../common/zyntheoRulesService.js';
+import { formatSubagentCatalog, formatSubagentSystemSuffix, resolveSubagent } from '../common/zyntheoAgents.js';
 
 
 // related to retrying when LLM message has error
@@ -118,6 +121,10 @@ export type ThreadType = {
 	id: string; // store the id here too
 	createdAt: string; // ISO string
 	lastModified: string; // ISO string
+	title?: string;
+	kind?: 'user' | 'subagent';
+	parentThreadId?: string;
+	subagentName?: string;
 
 	messages: ChatMessage[];
 	filesWithUserChanges: Set<string>;
@@ -209,14 +216,18 @@ export type ThreadStreamState = {
 	}
 }
 
-const newThreadObject = (chatMode?: ChatMode): ThreadType => {
+const newThreadObject = (opts?: { chatMode?: ChatMode; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): ThreadType => {
 	const now = new Date().toISOString()
 	return {
 		id: generateUuid(),
 		createdAt: now,
 		lastModified: now,
+		title: opts?.title,
+		kind: opts?.kind,
+		parentThreadId: opts?.parentThreadId,
+		subagentName: opts?.subagentName,
 		messages: [],
-		chatMode,
+		chatMode: opts?.chatMode,
 		state: {
 			currCheckpointIdx: null,
 			stagingSelections: [],
@@ -242,7 +253,7 @@ export interface IChatThreadService {
 	onDidChangeStreamState: Event<{ threadId: string }>
 
 	getCurrentThread(): ThreadType;
-	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean }): string;
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string;
 	switchToThread(threadId: string): void;
 	getThreadChatMode(threadId: string): ChatMode;
 	setThreadChatMode(threadId: string, chatMode: ChatMode): void;
@@ -334,6 +345,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IDirectoryStrService private readonly _directoryStringService: IDirectoryStrService,
 		@IFileService private readonly _fileService: IFileService,
 		@IMCPService private readonly _mcpService: IMCPService,
+		@IZyntheoHooksService private readonly _hooksService: IZyntheoHooksService,
+		@IZyntheoRulesSkillsService private readonly _rulesSkillsService: IZyntheoRulesSkillsService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -671,6 +684,23 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 
+		const hookDecision = await this._hooksService.run('preToolUse', {
+			threadId,
+			toolName,
+			params: toolParams,
+		})
+		if (hookDecision.permission === 'deny') {
+			const denyMessage = hookDecision.message || `Hook blocked ${toolName}.`
+			this._addMessageToThread(threadId, { role: 'tool', type: 'rejected', rawParams: opts.unvalidatedToolParams, result: null, name: toolName, params: toolParams, content: denyMessage, id: toolId, mcpServerName })
+			return {}
+		}
+
+		if (toolName === 'spawn_subagent') {
+			const spawned = await this._spawnSubagentFromTool(threadId, toolParams as BuiltinToolCallParams['spawn_subagent'])
+			this._addMessageToThread(threadId, { role: 'tool', type: 'success', params: toolParams, result: spawned, name: toolName, content: `Spawned subagent "${spawned.name}" in tab "${spawned.title}" (thread ${spawned.threadId}). The child is running in its own chat tab.`, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			return {}
+		}
+
 		// 3. call the tool
 		// this._setStreamState(threadId, { isRunning: 'tool' }, 'merge')
 		const runningTool = { role: 'tool', type: 'running_now', name: toolName, params: toolParams, content: '(value not received yet...)', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName } as const
@@ -714,6 +744,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			const errorMessage = getErrorMessage(error)
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			void this._hooksService.run('postToolUseFailure', { threadId, toolName, error: errorMessage })
 			return {}
 		}
 
@@ -734,8 +765,55 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: toolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+		void this._hooksService.run('postToolUse', { threadId, toolName, result: toolResultStr })
 		return {}
 	};
+
+	private _subagentSystemSuffix(threadId: string, chatMode: ChatMode): string | undefined {
+		const thread = this.state.allThreads[threadId]
+		if (thread?.kind !== 'subagent' || !thread.subagentName) {
+			return undefined
+		}
+		const resolved = resolveSubagent(thread.subagentName, this._rulesSkillsService.getCachedSnapshot().agents)
+		if (resolved) {
+			return formatSubagentSystemSuffix(resolved)
+		}
+		return formatSubagentSystemSuffix({
+			id: `runtime:${thread.subagentName}`,
+			name: thread.subagentName,
+			source: 'builtin',
+			description: '',
+			readonly: chatMode === 'ask' || chatMode === 'plan',
+			chatMode,
+			body: '',
+		})
+	}
+
+	private async _spawnSubagentFromTool(parentThreadId: string, params: BuiltinToolCallParams['spawn_subagent']): Promise<BuiltinToolResultType['spawn_subagent']> {
+		const snapshot = this._rulesSkillsService.getCachedSnapshot()
+		const agent = resolveSubagent(params.name, snapshot.agents)
+		if (!agent) {
+			throw new Error(`Unknown subagent "${params.name}". Available:\n${formatSubagentCatalog(snapshot.agents)}`)
+		}
+		const parentMode = this.getThreadChatMode(parentThreadId)
+		const parentIsReadonly = parentMode === 'ask' || parentMode === 'plan'
+		const readonly = params.readonly === true || agent.readonly || parentIsReadonly
+		const chatMode = readonly ? (parentMode === 'plan' || agent.chatMode === 'plan' ? 'plan' : 'ask') : agent.chatMode
+		const title = agent.name
+		const childId = this.openNewThread({
+			chatMode,
+			switchTo: false,
+			title,
+			kind: 'subagent',
+			parentThreadId,
+			subagentName: agent.name,
+		})
+		this._wrapRunAgentToNotify(
+			this.addUserMessageAndStreamResponse({ userMessage: params.prompt, threadId: childId }),
+			childId,
+		)
+		return { threadId: childId, name: agent.name, title }
+	}
 
 
 
@@ -788,10 +866,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 
 			const chatMessages = this.state.allThreads[threadId]?.messages ?? []
+			const extraSystemSuffix = this._subagentSystemSuffix(threadId, chatMode)
 			const { messages, separateSystemMessage } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
 				chatMessages,
 				modelSelection,
-				chatMode
+				chatMode,
+				extraSystemSuffix,
 			})
 
 			if (interruptedWhenIdle) {
@@ -916,6 +996,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// add checkpoint before the next user message
 		if (!isRunningWhenEnd) this._addUserCheckpoint({ threadId })
+
+		if (!isRunningWhenEnd) {
+			void this._hooksService.run('stop', { threadId, chatMode, nMessagesSent })
+		}
 
 		// capture number of messages sent
 		this._metricsService.capture('Agent Loop Done', { nMessagesSent, chatMode })
@@ -1262,6 +1346,15 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 
 		// add user's message to chat history
+		const submitHook = await this._hooksService.run('beforeSubmitPrompt', { threadId, userMessage })
+		if (submitHook.permission === 'deny') {
+			this._notificationService.notify({
+				severity: Severity.Warning,
+				message: submitHook.message || 'A hook blocked this prompt.',
+			})
+			return
+		}
+
 		const instructions = userMessage
 		const currSelns: StagingSelectionItem[] = _chatSelections ?? thread.state.stagingSelections
 
@@ -1665,16 +1758,16 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 
-	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean }): string {
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string {
 		const switchTo = opts?.switchTo !== false
 		const requestedMode = opts?.chatMode ? normalizeChatMode(opts.chatMode) : undefined
 		const { allThreads: currentThreads } = this.state
 
 		// Reuse an empty thread only when we are switching to it (normal new-chat flow).
-		if (switchTo) {
+		if (switchTo && opts?.kind !== 'subagent') {
 			for (const threadId in currentThreads) {
 				const existing = currentThreads[threadId]
-				if (existing && existing.messages.length === 0) {
+				if (existing && existing.messages.length === 0 && existing.kind !== 'subagent') {
 					if (requestedMode) this.setThreadChatMode(threadId, requestedMode)
 					this.switchToThread(threadId)
 					return threadId
@@ -1682,7 +1775,13 @@ We only need to do it for files that were edited since `from`, ie files between 
 			}
 		}
 
-		const newThread = newThreadObject(requestedMode)
+		const newThread = newThreadObject({
+			chatMode: requestedMode,
+			title: opts?.title,
+			kind: opts?.kind,
+			parentThreadId: opts?.parentThreadId,
+			subagentName: opts?.subagentName,
+		})
 
 		const newThreads: ChatThreads = {
 			...currentThreads,

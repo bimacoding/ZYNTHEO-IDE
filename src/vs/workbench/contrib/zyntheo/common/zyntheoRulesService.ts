@@ -31,10 +31,14 @@ import {
 	parseRuleDocument,
 	parseSkillDocument,
 } from './zyntheoRules.js'
+import { ZYNTHEO_AGENTS_DIR, ZyntheoSubagent, parseAgentDocument } from './zyntheoAgents.js'
+import { ZYNTHEO_HOOKS_FILE, ZyntheoHooksConfig, mergeHooksConfigs, parseHooksConfig } from './zyntheoHooks.js'
 
 export type ZyntheoRulesSkillsSnapshot = {
 	rules: ZyntheoRule[]
 	skills: ZyntheoSkill[]
+	agents: ZyntheoSubagent[]
+	hooks?: ZyntheoHooksConfig
 	workspaceRoots: string[]
 	userRoot?: string
 }
@@ -86,7 +90,7 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 	private readonly _onDidChange = this._register(new Emitter<void>())
 	readonly onDidChange = this._onDidChange.event
 
-	private snapshot: ZyntheoRulesSkillsSnapshot = { rules: [], skills: [], workspaceRoots: [] }
+	private snapshot: ZyntheoRulesSkillsSnapshot = { rules: [], skills: [], agents: [], workspaceRoots: [] }
 	private loadPromise: Promise<ZyntheoRulesSkillsSnapshot> | undefined
 	private readonly watched = new DisposableStore()
 	private userRoot: URI | undefined
@@ -178,7 +182,9 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 	private async loadAll(): Promise<ZyntheoRulesSkillsSnapshot> {
 		const rules: ZyntheoRule[] = []
 		const skills: ZyntheoSkill[] = []
+		const agents: ZyntheoSubagent[] = []
 		const workspaceRoots: string[] = []
+		let hooks: ZyntheoHooksConfig | undefined
 
 		try {
 			this.userRoot = await this.pathService.userHome()
@@ -190,7 +196,8 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 		if (this.userRoot) {
 			const userZyntheo = URI.joinPath(this.userRoot, ZYNTHEO_DIR_NAME)
 			watchRoots.push(userZyntheo)
-			await this.collectFromRoot(userZyntheo, 'user', rules, skills)
+			await this.collectFromRoot(userZyntheo, 'user', rules, skills, agents)
+			hooks = mergeHooksConfigs(hooks, await this.readHooksFile(URI.joinPath(userZyntheo, ZYNTHEO_HOOKS_FILE)))
 		}
 
 		for (const folder of this.workspaceContextService.getWorkspace().folders) {
@@ -202,15 +209,19 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 			for (const fileName of ZYNTHEO_RULES_FILE_NAMES) {
 				watchRoots.push(URI.joinPath(folder.uri, fileName))
 			}
-			await this.collectFromRoot(zyntheoRoot, 'workspace', rules, skills)
+			await this.collectFromRoot(zyntheoRoot, 'workspace', rules, skills, agents)
 			await this.collectLegacyRootFiles(folder.uri, 'legacy', rules)
-			await this.collectLegacyCursor(folder.uri, 'legacy', rules, skills)
+			await this.collectLegacyCursor(folder.uri, 'legacy', rules, skills, agents)
+			hooks = mergeHooksConfigs(hooks, await this.readHooksFile(URI.joinPath(cursorRoot, ZYNTHEO_HOOKS_FILE)))
+			hooks = mergeHooksConfigs(hooks, await this.readHooksFile(URI.joinPath(zyntheoRoot, ZYNTHEO_HOOKS_FILE)))
 		}
 
 		this.replaceWatchedRoots(watchRoots)
 		this.snapshot = {
 			rules,
 			skills,
+			agents,
+			hooks,
 			workspaceRoots,
 			userRoot: this.userRoot?.fsPath,
 		}
@@ -218,14 +229,16 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 		return this.snapshot
 	}
 
-	private async collectFromRoot(root: URI, source: ZyntheoGuidanceSource, rules: ZyntheoRule[], skills: ZyntheoSkill[]): Promise<void> {
+	private async collectFromRoot(root: URI, source: ZyntheoGuidanceSource, rules: ZyntheoRule[], skills: ZyntheoSkill[], agents: ZyntheoSubagent[]): Promise<void> {
 		await this.collectRulesDir(URI.joinPath(root, ZYNTHEO_RULES_DIR), source, rules)
 		await this.collectSkillsDir(URI.joinPath(root, ZYNTHEO_SKILLS_DIR), source, skills)
+		await this.collectAgentsDir(URI.joinPath(root, ZYNTHEO_AGENTS_DIR), source, agents)
 	}
 
-	private async collectLegacyCursor(folder: URI, source: ZyntheoGuidanceSource, rules: ZyntheoRule[], skills: ZyntheoSkill[]): Promise<void> {
+	private async collectLegacyCursor(folder: URI, source: ZyntheoGuidanceSource, rules: ZyntheoRule[], skills: ZyntheoSkill[], agents: ZyntheoSubagent[]): Promise<void> {
 		await this.collectRulesDir(URI.joinPath(folder, '.cursor', ZYNTHEO_RULES_DIR), source, rules)
 		await this.collectSkillsDir(URI.joinPath(folder, '.cursor', ZYNTHEO_SKILLS_DIR), source, skills)
+		await this.collectAgentsDir(URI.joinPath(folder, '.cursor', ZYNTHEO_AGENTS_DIR), source, agents)
 	}
 
 	private async collectLegacyRootFiles(folder: URI, source: ZyntheoGuidanceSource, rules: ZyntheoRule[]): Promise<void> {
@@ -248,6 +261,33 @@ class ZyntheoRulesSkillsService extends Disposable implements IZyntheoRulesSkill
 			if (rule) {
 				rules.push(rule)
 			}
+		}
+	}
+
+	private async collectAgentsDir(dir: URI, source: ZyntheoGuidanceSource, agents: ZyntheoSubagent[]): Promise<void> {
+		const files = await this.listFiles(dir, 2)
+		for (const file of files) {
+			const name = fileNameFromPath(file.fsPath).toLowerCase()
+			if (!name.endsWith('.md') && !name.endsWith('.mdc') && !name.endsWith('.txt')) {
+				continue
+			}
+			const content = await this.readText(file)
+			if (content === undefined) {
+				continue
+			}
+			agents.push(parseAgentDocument({ path: file.fsPath, content, source }))
+		}
+	}
+
+	private async readHooksFile(uri: URI): Promise<ZyntheoHooksConfig | undefined> {
+		const content = await this.readText(uri)
+		if (content === undefined) {
+			return undefined
+		}
+		try {
+			return parseHooksConfig(content)
+		} catch {
+			return undefined
 		}
 	}
 

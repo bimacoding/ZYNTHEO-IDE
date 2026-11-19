@@ -14,11 +14,13 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { MCPServerOfName, MCPConfigFileJSON, MCPServer, MCPToolCallParams, RawMCPToolCall, MCPServerEventResponse } from './mcpServiceTypes.js';
+import { MCPServerOfName, MCPConfigFileJSON, MCPServer, MCPToolCallParams, RawMCPToolCall, MCPServerEventResponse, mergeMCPConfigFiles } from './mcpServiceTypes.js';
 import { Event, Emitter } from '../../../../base/common/event.js';
 import { InternalToolInfo } from './prompt/prompts.js';
 import { IZyntheoSettingsService } from './zyntheoSettingsService.js';
 import { MCPUserStateOfName } from './zyntheoSettingsTypes.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
+import { ZYNTHEO_DIR_NAME } from './zyntheoRules.js';
 
 
 type MCPServiceState = {
@@ -82,6 +84,7 @@ class MCPService extends Disposable implements IMCPService {
 		@IEditorService private readonly editorService: IEditorService,
 		@IMainProcessService private readonly mainProcessService: IMainProcessService,
 		@IZyntheoSettingsService private readonly zyntheoSettingsService: IZyntheoSettingsService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
 		this.channel = this.mainProcessService.getChannel('zyntheo-channel-mcp')
@@ -111,6 +114,9 @@ class MCPService extends Disposable implements IMCPService {
 				console.log('MCP Config file created:', mcpConfigUri.toString());
 			}
 			await this._addMCPConfigFileWatcher();
+			this._register(this.workspaceContextService.onDidChangeWorkspaceFolders(() => {
+				void this._refreshMCPServers()
+			}))
 			await this._refreshMCPServers();
 		} catch (error) {
 			console.error('Error initializing MCPService:', error);
@@ -155,13 +161,13 @@ class MCPService extends Disposable implements IMCPService {
 
 
 	private async _addMCPConfigFileWatcher(): Promise<void> {
-		const mcpConfigUri = await this._getMCPConfigFilePath();
-		this._register(
-			this.fileService.watch(mcpConfigUri)
-		)
+		const watched = await this._mcpConfigUris()
+		for (const uri of watched) {
+			this._register(this.fileService.watch(uri))
+		}
 
 		this._register(this.fileService.onDidFilesChange(async e => {
-			if (!e.contains(mcpConfigUri)) return
+			if (!watched.some(uri => e.contains(uri))) return
 			await this._refreshMCPServers();
 		}));
 	}
@@ -240,21 +246,42 @@ class MCPService extends Disposable implements IMCPService {
 	}
 
 
-	private async _parseMCPConfigFile(): Promise<MCPConfigFileJSON | null> {
-		const mcpConfigUri = await this._getMCPConfigFilePath();
-		try {
-			const fileContent = await this.fileService.readFile(mcpConfigUri);
-			const contentString = fileContent.value.toString();
-			const configFileJson = JSON.parse(contentString);
-			if (!configFileJson.mcpServers) {
-				throw new Error('Missing mcpServers property');
-			}
-			return configFileJson as MCPConfigFileJSON;
-		} catch (error) {
-			const fullError = `Error parsing MCP config file: ${error}`;
-			this._setHasError(fullError)
-			return null;
+	private async _mcpConfigUris(): Promise<URI[]> {
+		const uris: URI[] = [await this._getMCPConfigFilePath()]
+		for (const folder of this.workspaceContextService.getWorkspace().folders) {
+			uris.push(URI.joinPath(folder.uri, ZYNTHEO_DIR_NAME, MCP_CONFIG_FILE_NAME))
+			uris.push(URI.joinPath(folder.uri, '.cursor', MCP_CONFIG_FILE_NAME))
 		}
+		return uris
+	}
+
+	private async _readMCPConfig(uri: URI): Promise<MCPConfigFileJSON | null> {
+		try {
+			const fileContent = await this.fileService.readFile(uri)
+			const configFileJson = JSON.parse(fileContent.value.toString()) as Partial<MCPConfigFileJSON>
+			if (!configFileJson || typeof configFileJson !== 'object' || !configFileJson.mcpServers || typeof configFileJson.mcpServers !== 'object') {
+				return null
+			}
+			return configFileJson as MCPConfigFileJSON
+		} catch {
+			return null
+		}
+	}
+
+	private async _parseMCPConfigFile(): Promise<MCPConfigFileJSON | null> {
+		const uris = await this._mcpConfigUris()
+		const parsedConfigs: MCPConfigFileJSON[] = []
+		for (const uri of uris) {
+			const parsed = await this._readMCPConfig(uri)
+			if (parsed) {
+				parsedConfigs.push(parsed)
+			}
+		}
+		if (!parsedConfigs.length) {
+			return null
+		}
+		this._setHasError(undefined)
+		return mergeMCPConfigFiles(parsedConfigs)
 	}
 
 

@@ -133,6 +133,7 @@ import { LLMMessageChannel } from '../../workbench/contrib/zyntheo/electron-main
 import { ZyntheoSCMService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoSCMMainService.js';
 import { IZyntheoSCMService } from '../../workbench/contrib/zyntheo/common/zyntheoSCMTypes.js';
 import { MCPChannel } from '../../workbench/contrib/zyntheo/electron-main/mcpChannel.js';
+import { ZyntheoHooksChannel } from '../../workbench/contrib/zyntheo/electron-main/zyntheoHooksChannel.js';
 import { ZyntheoRustMainService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoRustMainService.js';
 import { IZyntheoRustMainService, ZYNTHEO_RUST_CHANNEL_NAME } from '../../workbench/contrib/zyntheo/common/zyntheoRustServiceTypes.js';
 import { ZyntheoBrowserMainService } from '../../workbench/contrib/zyntheo/electron-main/zyntheoBrowserMainService.js';
@@ -1260,6 +1261,9 @@ export class CodeApplication extends Disposable {
 		// Void added this
 		const mcpChannel = new MCPChannel();
 		mainProcessElectronServer.registerChannel('zyntheo-channel-mcp', mcpChannel);
+
+		const hooksChannel = new ZyntheoHooksChannel();
+		mainProcessElectronServer.registerChannel('zyntheo-channel-hooks', hooksChannel);
 
 		const zyntheoRustChannel = ProxyChannel.fromService(accessor.get(IZyntheoRustMainService), disposables);
 		mainProcessElectronServer.registerChannel(ZYNTHEO_RUST_CHANNEL_NAME, zyntheoRustChannel);

@@ -24,6 +24,9 @@
 | Onboarding | `void-onboarding/` |
 | Model capabilities | `modelCapabilities.ts` |
 | MCP | `mcpService.ts`, electron-main MCP |
+| Rules / Skills | `.zyntheo/rules`, `.zyntheo/skills`, `zyntheoRulesService.ts` |
+| Subagents / Hooks | `.zyntheo/agents`, `.zyntheo/hooks.json`, `spawn_subagent` |
+| Multi-agent chat tabs | `zyntheoChatTabs.ts`, `SidebarChat.tsx` |
 | Update check | `voidUpdateMainService.ts` |
 | Metrics | `metricsService.ts` |
 | Extension transfer (VS Code/Cursor/Windsurf → Void) | `extensionTransferService.ts` |

@@ -60,6 +60,7 @@ export type BuiltinToolCallParams = {
 	'open_persistent_terminal': { cwd: string | null },
 	'run_persistent_command': { command: string; persistentTerminalId: string },
 	'kill_persistent_terminal': { persistentTerminalId: string },
+	'spawn_subagent': { name: string; prompt: string; readonly: boolean | null },
 }
 
 // RESULT OF TOOL CALL
@@ -81,6 +82,7 @@ export type BuiltinToolResultType = {
 	'run_persistent_command': { result: string; resolveReason: TerminalResolveReason; },
 	'open_persistent_terminal': { persistentTerminalId: string },
 	'kill_persistent_terminal': {},
+	'spawn_subagent': { threadId: string; name: string; title: string },
 }
 
 

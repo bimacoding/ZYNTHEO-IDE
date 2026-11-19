@@ -22,7 +22,7 @@ import { ChatMode, chatModes, displayInfoOfChatMode, displayInfoOfProviderName, 
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../zyntheo-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, File, Ban, Bot, Check, ChevronRight, Clock, Dot, FileIcon, LoaderCircle, MessageSquare, Pencil, Plus, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -36,6 +36,7 @@ import { ToolApprovalTypeSwitch } from '../zyntheo-settings-tsx/Settings.js';
 import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
 import { applyLiveTranscript, createImageStagingSelection, encodeBytesToBase64, getSpeechRecognitionConstructor, guessMimeType, isImageFileName, isImageMimeType, MAX_IMAGE_BYTES, SpeechRecognitionLike } from '../../../../common/chatAttachments.js';
+import { visibleAgentTabs } from '../../../../common/zyntheoChatTabs.js';
 
 
 
@@ -1688,6 +1689,7 @@ const titleOfBuiltinToolName = {
 
 	'read_lint_errors': { done: `Read lint errors`, proposed: 'Read lint errors', running: loadingTitleWrapper('Reading lint errors') },
 	'search_in_file': { done: 'Searched in file', proposed: 'Search in file', running: loadingTitleWrapper('Searching in file') },
+	'spawn_subagent': { done: 'Spawned agent', proposed: 'Spawn agent', running: loadingTitleWrapper('Spawning agent') },
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 
 
@@ -1826,6 +1828,12 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 			return {
 				desc1: getBasename(toolParams.uri.fsPath),
 				desc1Info: getRelative(toolParams.uri, accessor),
+			}
+		},
+		'spawn_subagent': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['spawn_subagent']
+			return {
+				desc1: toolParams.name,
 			}
 		}
 	}
@@ -2713,6 +2721,37 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			return <ToolHeaderWrapper {...componentParams} />
 		},
 	},
+	'spawn_subagent': {
+		resultWrapper: ({ toolMessage }) => {
+			const accessor = useAccessor()
+			const chatThreadsService = accessor.get('IChatThreadService')
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
+			const title = getTitle(toolMessage)
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon: null, isRejected }
+
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') {
+				return null
+			}
+
+			if (toolMessage.type === 'success') {
+				const childId = toolMessage.result.threadId
+				componentParams.desc1 = toolMessage.result.title || toolMessage.result.name
+				componentParams.info = 'Opens in its own chat tab'
+				componentParams.onClick = () => chatThreadsService.switchToThread(childId)
+			}
+			else if (toolMessage.type === 'tool_error') {
+				componentParams.bottomChildren = <BottomChildren title='Error'>
+					<CodeChildren>
+						{toolMessage.result}
+					</CodeChildren>
+				</BottomChildren>
+			}
+
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
 };
 
 
@@ -3146,6 +3185,103 @@ const EditToolSoFar = ({ toolCallSoFar, }: { toolCallSoFar: RawToolCallObj }) =>
 }
 
 
+const AgentTabsBar = () => {
+	const accessor = useAccessor()
+	const chatThreadsService = accessor.get('IChatThreadService')
+	const commandService = accessor.get('ICommandService')
+	const chatThreadsState = useChatThreadsState()
+	const streamState = useFullChatThreadsStreamState()
+
+	const runningIds = useMemo(() => {
+		return Object.keys(streamState || {}).filter(id => !!streamState[id]?.isRunning)
+	}, [streamState])
+
+	const tabs = useMemo(() => {
+		return visibleAgentTabs(chatThreadsState.allThreads || {}, chatThreadsState.currentThreadId, runningIds)
+	}, [chatThreadsState.allThreads, chatThreadsState.currentThreadId, runningIds])
+
+	const openNewAgent = useCallback(() => {
+		chatThreadsService.openNewThread({ switchTo: true })
+		void chatThreadsService.focusCurrentChat()
+	}, [chatThreadsService])
+
+	return (
+		<div className='flex items-center gap-1 px-2 pt-1 pb-0.5 min-h-[32px] border-b border-zyntheo-border-1 bg-zyntheo-bg-2/40'>
+			<div className='flex items-center gap-1 overflow-x-auto min-w-0 flex-1 scrollbar-hide'>
+				{tabs.map(tab => {
+					const running = streamState[tab.id]?.isRunning
+					const isActive = tab.id === chatThreadsState.currentThreadId
+					const statusColor = running === 'awaiting_user' ? 'yellow' : running ? 'orange' : 'dark'
+					const TabIcon = tab.kind === 'subagent' ? Bot : MessageSquare
+					return (
+						<button
+							key={tab.id}
+							type='button'
+							className={`
+								group flex items-center gap-1 max-w-[168px] h-6 px-1.5 rounded-md text-[11px] leading-none
+								border transition-colors flex-shrink-0
+								${isActive
+									? 'bg-zyntheo-bg-1 border-zyntheo-border-1 text-zyntheo-fg-1'
+									: 'bg-transparent border-transparent text-zyntheo-fg-3 hover:bg-zyntheo-bg-1/70 hover:text-zyntheo-fg-1'}
+							`}
+							onClick={() => chatThreadsService.switchToThread(tab.id)}
+							data-tooltip-id='zyntheo-tooltip'
+							data-tooltip-content={tab.kind === 'subagent' ? `Subagent: ${tab.title}` : tab.title}
+							data-tooltip-place='bottom'
+						>
+							{running && running !== 'awaiting_user'
+								? <LoaderCircle size={11} className='animate-spin flex-shrink-0' />
+								: <TabIcon size={11} className='flex-shrink-0 opacity-80' />}
+							<span className='truncate'>{tab.title}</span>
+							<StatusIndicator className='mx-0 scale-75' indicatorColor={statusColor} title={running === 'awaiting_user' ? 'Needs approval' : running ? 'Running' : 'Idle'} />
+							<span
+								className={`ml-0.5 rounded p-0.5 hover:bg-zyntheo-bg-2 ${isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'}`}
+								onClick={(event) => {
+									event.stopPropagation()
+									const remaining = Object.keys(chatThreadsState.allThreads || {}).filter(id => id !== tab.id)
+									chatThreadsService.deleteThread(tab.id)
+									if (isActive) {
+										if (remaining[0]) {
+											chatThreadsService.switchToThread(remaining[0])
+										} else {
+											chatThreadsService.openNewThread({ switchTo: true })
+										}
+									}
+								}}
+								aria-label={`Close ${tab.title}`}
+							>
+								<X size={10} />
+							</span>
+						</button>
+					)
+				})}
+			</div>
+			<button
+				type='button'
+				className='flex items-center justify-center h-6 w-6 rounded-md text-zyntheo-fg-3 hover:text-zyntheo-fg-1 hover:bg-zyntheo-bg-1 flex-shrink-0'
+				onClick={openNewAgent}
+				data-tooltip-id='zyntheo-tooltip'
+				data-tooltip-content='New Agent'
+				data-tooltip-place='bottom'
+				aria-label='New Agent'
+			>
+				<Plus size={14} />
+			</button>
+			<button
+				type='button'
+				className='flex items-center justify-center h-6 w-6 rounded-md text-zyntheo-fg-3 hover:text-zyntheo-fg-1 hover:bg-zyntheo-bg-1 flex-shrink-0'
+				onClick={() => commandService.executeCommand('zyntheo.historyAction')}
+				data-tooltip-id='zyntheo-tooltip'
+				data-tooltip-content='Past chats'
+				data-tooltip-place='bottom'
+				aria-label='Past chats'
+			>
+				<Clock size={13} />
+			</button>
+		</div>
+	)
+}
+
 export const SidebarChat = () => {
 	const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
 	const textAreaFnsRef = useRef<TextAreaFns | null>(null)
@@ -3419,23 +3555,28 @@ export const SidebarChat = () => {
 
 	const landingPageContent = <div
 		ref={sidebarRef}
-		className='w-full h-full max-h-full flex flex-col overflow-auto px-4'
+		className='w-full h-full max-h-full flex flex-col overflow-hidden'
 	>
 		<ErrorBoundary>
-			{landingPageInput}
+			<AgentTabsBar />
 		</ErrorBoundary>
+		<div className='flex-1 overflow-auto px-4'>
+			<ErrorBoundary>
+				{landingPageInput}
+			</ErrorBoundary>
 
-		{Object.keys(chatThreadsState.allThreads).length > 1 ? // show if there are threads
-			<ErrorBoundary>
-				<div className='pt-8 mb-2 text-zyntheo-fg-3 text-root select-none pointer-events-none'>Previous Threads</div>
-				<PastThreadsList />
-			</ErrorBoundary>
-			:
-			<ErrorBoundary>
-				<div className='pt-8 mb-2 text-zyntheo-fg-3 text-root select-none pointer-events-none'>Suggestions</div>
-				{initiallySuggestedPromptsHTML}
-			</ErrorBoundary>
-		}
+			{Object.keys(chatThreadsState.allThreads).length > 1 ? // show if there are threads
+				<ErrorBoundary>
+					<div className='pt-8 mb-2 text-zyntheo-fg-3 text-root select-none pointer-events-none'>Previous Threads</div>
+					<PastThreadsList />
+				</ErrorBoundary>
+				:
+				<ErrorBoundary>
+					<div className='pt-8 mb-2 text-zyntheo-fg-3 text-root select-none pointer-events-none'>Suggestions</div>
+					{initiallySuggestedPromptsHTML}
+				</ErrorBoundary>
+			}
+		</div>
 	</div>
 
 
@@ -3456,7 +3597,9 @@ export const SidebarChat = () => {
 		ref={sidebarRef}
 		className='w-full h-full flex flex-col overflow-hidden'
 	>
-
+		<ErrorBoundary>
+			<AgentTabsBar />
+		</ErrorBoundary>
 		<ErrorBoundary>
 			{messagesHTML}
 		</ErrorBoundary>

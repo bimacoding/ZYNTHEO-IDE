@@ -149,7 +149,7 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: ZYNTHEO_CMD_SHIFT_L_ACTION_ID,
-			title: 'New Chat',
+			title: 'New Agent',
 			keybinding: {
 				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyL,
 				weight: KeybindingWeight.VoidExtension,

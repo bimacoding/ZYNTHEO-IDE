@@ -70,6 +70,9 @@ function prepareDebPackage(arch) {
 		const icon = gulp.src('resources/linux/code.png', { base: '.' })
 			.pipe(rename('usr/share/pixmaps/' + product.linuxIconName + '.png'));
 
+		const hicolorIcon = gulp.src('resources/linux/code.png', { base: '.' })
+			.pipe(rename('usr/share/icons/hicolor/512x512/apps/' + product.linuxIconName + '.png'));
+
 		const bash_completion = gulp.src('resources/completions/bash/code')
 			.pipe(replace('@@APPNAME@@', product.applicationName))
 			.pipe(rename('usr/share/bash-completion/completions/' + product.applicationName));
@@ -113,7 +116,7 @@ function prepareDebPackage(arch) {
 			.pipe(replace('@@NAME@@', product.applicationName))
 			.pipe(rename('DEBIAN/templates'));
 
-		const all = es.merge(control, templates, postinst, postrm, prerm, desktops, appdata, workspaceMime, icon, bash_completion, zsh_completion, code);
+		const all = es.merge(control, templates, postinst, postrm, prerm, desktops, appdata, workspaceMime, icon, hicolorIcon, bash_completion, zsh_completion, code);
 
 		return all.pipe(vfs.dest(destination));
 	};
@@ -186,6 +189,9 @@ function prepareRpmPackage(arch) {
 		const icon = gulp.src('resources/linux/code.png', { base: '.' })
 			.pipe(rename('BUILD/usr/share/pixmaps/' + product.linuxIconName + '.png'));
 
+		const hicolorIcon = gulp.src('resources/linux/code.png', { base: '.' })
+			.pipe(rename('BUILD/usr/share/icons/hicolor/512x512/apps/' + product.linuxIconName + '.png'));
+
 		const bash_completion = gulp.src('resources/completions/bash/code')
 			.pipe(replace('@@APPNAME@@', product.applicationName))
 			.pipe(rename('BUILD/usr/share/bash-completion/completions/' + product.applicationName));
@@ -214,7 +220,7 @@ function prepareRpmPackage(arch) {
 		const specIcon = gulp.src('resources/linux/rpm/code.xpm', { base: '.' })
 			.pipe(rename('SOURCES/' + product.applicationName + '.xpm'));
 
-		const all = es.merge(code, desktops, appdata, workspaceMime, icon, bash_completion, zsh_completion, spec, specIcon);
+		const all = es.merge(code, desktops, appdata, workspaceMime, icon, hicolorIcon, bash_completion, zsh_completion, spec, specIcon);
 
 		return all.pipe(vfs.dest(getRpmBuildPath(rpmArch)));
 	};

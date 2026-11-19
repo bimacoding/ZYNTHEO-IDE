@@ -59,5 +59,12 @@ fi
 
 ELECTRON="$VSCODE_PATH/@@APPNAME@@"
 CLI="$VSCODE_PATH/resources/app/out/cli.js"
+
+# Prefer native Wayland on GNOME, KDE Plasma, Sway, Hyprland, and other
+# compositors. Electron falls back to X11/XWayland automatically.
+if [ -z "${ELECTRON_OZONE_PLATFORM_HINT}" ]; then
+	export ELECTRON_OZONE_PLATFORM_HINT=auto
+fi
+
 ELECTRON_RUN_AS_NODE=1 "$ELECTRON" "$CLI" "$@"
 exit $?

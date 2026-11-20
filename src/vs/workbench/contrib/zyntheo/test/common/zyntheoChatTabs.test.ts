@@ -5,12 +5,12 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { threadDisplayTitle, visibleAgentTabs } from '../../common/zyntheoChatTabs.js';
+import { nextTabIdAfterClose, threadDisplayTitle, visibleAgentTabs } from '../../common/zyntheoChatTabs.js';
 
 suite('Zyntheo chat agent tabs', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('shows current thread, recent chats, running subagent, and hides empty unused threads', () => {
+	test('shows current thread, recent chats, running subagent, and empty open tabs', () => {
 		const tabs = visibleAgentTabs({
 			parent: {
 				id: 'parent',
@@ -46,6 +46,7 @@ suite('Zyntheo chat agent tabs', () => {
 			'user:Full rebranding and launch',
 			'subagent:explore',
 			'user:Diagnose and start Traefik',
+			'user:New Agent',
 		]);
 	});
 
@@ -54,5 +55,20 @@ suite('Zyntheo chat agent tabs', () => {
 			id: 'a',
 			messages: [{ role: 'user', displayContent: 'Plan, Build, / for skills' }],
 		}), 'Plan, Build, / for skills');
+	});
+
+	test('closing a tab selects the next neighbor, then the previous', () => {
+		const tabs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+		assert.strictEqual(nextTabIdAfterClose(tabs, 'b'), 'c');
+		assert.strictEqual(nextTabIdAfterClose(tabs, 'c'), 'b');
+		assert.strictEqual(nextTabIdAfterClose([{ id: 'only' }], 'only'), undefined);
+	});
+
+	test('hides archived chats even when they still have messages', () => {
+		const tabs = visibleAgentTabs({
+			open: { id: 'open', title: 'Stay open', messages: [{ role: 'user', displayContent: 'hi' }] },
+			closed: { id: 'closed', title: 'kamu siapa sih ?', archived: true, messages: [{ role: 'user', displayContent: 'kamu siapa sih ?' }] },
+		}, 'open');
+		assert.deepStrictEqual(tabs.map(tab => tab.id), ['open']);
 	});
 });

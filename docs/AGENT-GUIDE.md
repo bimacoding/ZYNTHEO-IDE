@@ -127,9 +127,9 @@ Tool MCP muncul di agent/debug/multitask (mode tulis). Mode Plan/Ask tetap read-
 
 ## Chat tabs (seperti Cursor)
 
-- Tab di bawah header CHAT meniru Cursor: chat terbaru berjajar, tab aktif lebih terang dengan tombol close, tab lain redup.
-- **+** di header CHAT atau `Ctrl/Cmd+Shift+L` = New Agent (thread kosong, tab baru).
-- Close (`×`) mengarsipkan chat, **bukan** menghapus. Buka lagi dari ikon jam (history).
+- Tab di bawah header CHAT meniru browser: chat terbuka berjajar, tab aktif lebih terang, tab lain redup.
+- **+** di kanan tab bar atau `Ctrl/Cmd+Shift+L` menambah tab baru.
+- **×** menutup tab itu saja. Chat yang sudah berisi masuk history; tab kosong dihapus. Tab terakhir yang kosong tetap terbuka.
 - Subagent yang di-spawn otomatis muncul sebagai tab. Parent menunggu ringkasan child, lalu kartu hasil bisa diklik untuk membuka tab itu.
 
 ## Composer (seperti Cursor)

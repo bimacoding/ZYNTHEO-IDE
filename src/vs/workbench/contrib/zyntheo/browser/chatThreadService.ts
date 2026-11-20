@@ -43,6 +43,7 @@ import { IZyntheoHooksService } from '../common/zyntheoHooksService.js';
 import { IZyntheoRulesSkillsService } from '../common/zyntheoRulesService.js';
 import { formatSubagentCatalog, formatSubagentSystemSuffix, resolveSubagent } from '../common/zyntheoAgents.js';
 import { enqueueChatMessageAt, moveQueuedMessage, QueuedChatMessage, removeQueuedMessage, summarizeSubagentThread, takeNextQueuedMessage } from '../common/zyntheoChatAgent.js';
+import { nextTabIdAfterClose, visibleAgentTabs } from '../common/zyntheoChatTabs.js';
 
 
 // related to retrying when LLM message has error
@@ -260,7 +261,7 @@ export interface IChatThreadService {
 	onDidToggleHistory: Event<void>;
 
 	getCurrentThread(): ThreadType;
-	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string;
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; forceNew?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string;
 	switchToThread(threadId: string): void;
 	getThreadChatMode(threadId: string): ChatMode;
 	setThreadChatMode(threadId: string, chatMode: ChatMode): void;
@@ -269,6 +270,7 @@ export interface IChatThreadService {
 	deleteThread(threadId: string): void;
 	duplicateThread(threadId: string): void;
 	archiveThread(threadId: string): void;
+	closeThread(threadId: string): void;
 	toggleHistoryPanel(): void;
 	enqueueQueuedMessage(threadId: string, userMessage: string, position?: 'start' | 'end'): void;
 	getQueuedMessages(threadId: string): QueuedChatMessage[];
@@ -1805,13 +1807,14 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 
-	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string {
+	openNewThread(opts?: { chatMode?: ChatMode; switchTo?: boolean; forceNew?: boolean; title?: string; kind?: 'user' | 'subagent'; parentThreadId?: string; subagentName?: string }): string {
 		const switchTo = opts?.switchTo !== false
 		const requestedMode = opts?.chatMode ? normalizeChatMode(opts.chatMode) : undefined
 		const { allThreads: currentThreads } = this.state
 
-		// Reuse an empty thread only when we are switching to it (normal new-chat flow).
-		if (switchTo && opts?.kind !== 'subagent') {
+		// Reuse an empty thread only for the default new-chat flow.
+		// Browser-like "+" always creates a fresh tab (`forceNew`).
+		if (switchTo && !opts?.forceNew && opts?.kind !== 'subagent') {
 			for (const threadId in currentThreads) {
 				const existing = currentThreads[threadId]
 				if (existing && existing.messages.length === 0 && existing.kind !== 'subagent' && !existing.archived) {
@@ -1859,20 +1862,43 @@ We only need to do it for files that were edited since `from`, ie files between 
 	}
 
 	archiveThread(threadId: string): void {
+		this.closeThread(threadId)
+	}
+
+	closeThread(threadId: string): void {
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return
+
+		const wasCurrent = this.state.currentThreadId === threadId
+		const runningIds = Object.keys(this.streamState || {}).filter(id => !!this.streamState[id]?.isRunning)
+		const openTabs = visibleAgentTabs(this.state.allThreads || {}, this.state.currentThreadId, runningIds)
+		const remainingTabs = openTabs.filter(tab => tab.id !== threadId)
+		const nextId = nextTabIdAfterClose(openTabs, threadId)
+		const isEmpty = !thread.messages?.some(message => message.role === 'user' || message.role === 'assistant')
+
+		// Last empty tab stays put, like a browser that always keeps one tab.
+		if (isEmpty && remainingTabs.length === 0) {
+			return
+		}
+
+		if (this.streamState[threadId]?.isRunning) {
+			void this.abortRunning(threadId)
+		}
+
+		// Switch away first so the current thread never points at a deleted/archived tab.
+		if (wasCurrent) {
+			if (nextId && this.state.allThreads[nextId] && !this.state.allThreads[nextId]?.archived) {
+				this.switchToThread(nextId)
+			} else {
+				this.openNewThread({ switchTo: true })
+			}
+		}
+
+		if (isEmpty) {
+			this.deleteThread(threadId)
+			return
+		}
 		this._patchThread(threadId, { archived: true })
-		if (this.state.currentThreadId !== threadId) {
-			return
-		}
-		const remaining = Object.values(this.state.allThreads)
-			.filter((candidate): candidate is ThreadType => !!candidate && candidate.id !== threadId && !candidate.archived)
-			.sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || ''))
-		if (remaining[0]) {
-			this.switchToThread(remaining[0].id)
-			return
-		}
-		this.openNewThread({ switchTo: true })
 	}
 
 	toggleHistoryPanel(): void {

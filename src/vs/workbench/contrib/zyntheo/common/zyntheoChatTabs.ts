@@ -77,7 +77,6 @@ export function visibleAgentTabs(
 	}
 
 	const shouldShow = (thread: AgentTabThreadLike) => {
-		const empty = isEmptyAgentThread(thread)
 		const isCurrent = thread.id === currentThreadId
 		const isRunning = running.has(thread.id)
 		const isSubagent = thread.kind === 'subagent' || !!thread.parentThreadId
@@ -91,7 +90,8 @@ export function visibleAgentTabs(
 		if (isSubagent) {
 			return inFamily
 		}
-		return !empty
+		// Keep empty user chats visible so "+" / "x" behave like browser tabs.
+		return true
 	}
 
 	const shown = Object.values(allThreads)
@@ -112,4 +112,12 @@ export function visibleAgentTabs(
 		})
 
 	return shown.slice(0, MAX_VISIBLE_AGENT_TABS).map(toInfo)
+}
+
+export function nextTabIdAfterClose(tabs: { id: string }[], closedId: string): string | undefined {
+	const idx = tabs.findIndex(tab => tab.id === closedId)
+	if (idx < 0) {
+		return tabs[0]?.id
+	}
+	return tabs[idx + 1]?.id || tabs[idx - 1]?.id
 }

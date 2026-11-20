@@ -22,7 +22,7 @@ import { ChatMode, chatModes, displayInfoOfChatMode, displayInfoOfProviderName, 
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../zyntheo-settings-tsx/WarningBox.js';
 import { getModelCapabilities, getIsReasoningEnabledState } from '../../../../common/modelCapabilities.js';
-import { AlertTriangle, File, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Dot, FileIcon, LoaderCircle, MessageSquare, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronDown, ChevronRight, ChevronUp, Dot, FileIcon, LoaderCircle, MessageSquare, Pencil, Plus, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Paperclip, Mic, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -3313,41 +3313,63 @@ const AgentTabsBar = () => {
 					const running = streamState[tab.id]?.isRunning
 					const isActive = tab.id === chatThreadsState.currentThreadId
 					return (
-						<button
+						<div
 							key={tab.id}
-							type='button'
 							className={`
-								group flex items-center gap-1.5 h-full max-w-[188px] px-3 text-[12px] leading-none
-								border-0 border-r border-zyntheo-border-1/70 transition-colors flex-shrink-0
+								group flex items-stretch h-full max-w-[188px] flex-shrink-0
+								border-0 border-r border-zyntheo-border-1/70
 								${isActive
 									? 'bg-zyntheo-bg-1 text-zyntheo-fg-1'
 									: 'bg-transparent text-zyntheo-fg-3 hover:text-zyntheo-fg-1'}
 							`}
-							onClick={() => chatThreadsService.switchToThread(tab.id)}
-							data-tooltip-id='zyntheo-tooltip'
-							data-tooltip-content={tab.kind === 'subagent' ? `Subagent: ${tab.title}` : tab.title}
-							data-tooltip-place='bottom'
 						>
-							{running && running !== 'awaiting_user'
-								? <LoaderCircle size={13} className='animate-spin flex-shrink-0 opacity-80' />
-								: <MessageSquare size={13} className='flex-shrink-0 opacity-80' />}
-							<span className='truncate'>{tab.title}</span>
-							{isActive && (
-								<span
-									className='ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100 hover:bg-zyntheo-bg-2'
-									onClick={(event) => {
-										event.stopPropagation()
-										chatThreadsService.archiveThread(tab.id)
-									}}
-									aria-label={`Close ${tab.title}`}
-								>
-									<X size={11} />
-								</span>
-							)}
-						</button>
+							<button
+								type='button'
+								className='flex items-center gap-1.5 h-full min-w-0 pl-3 pr-1 text-[12px] leading-none border-0 bg-transparent text-inherit'
+								onClick={() => chatThreadsService.switchToThread(tab.id)}
+								data-tooltip-id='zyntheo-tooltip'
+								data-tooltip-content={tab.kind === 'subagent' ? `Subagent: ${tab.title}` : tab.title}
+								data-tooltip-place='bottom'
+							>
+								{running && running !== 'awaiting_user'
+									? <LoaderCircle size={13} className='animate-spin flex-shrink-0 opacity-80' />
+									: <MessageSquare size={13} className='flex-shrink-0 opacity-80' />}
+								<span className='truncate'>{tab.title}</span>
+							</button>
+							<button
+								type='button'
+								className={`
+									flex items-center justify-center w-6 h-full border-0 bg-transparent text-inherit
+									rounded-none opacity-70 hover:opacity-100 hover:bg-zyntheo-bg-2
+									${isActive ? 'opacity-80' : 'opacity-0 group-hover:opacity-70'}
+								`}
+								onMouseDown={(event) => {
+									event.preventDefault()
+									event.stopPropagation()
+								}}
+								onClick={(event) => {
+									event.preventDefault()
+									event.stopPropagation()
+									chatThreadsService.closeThread(tab.id)
+								}}
+								aria-label={`Close ${tab.title}`}
+								title='Close tab'
+							>
+								<X size={11} />
+							</button>
+						</div>
 					)
 				})}
 			</div>
+			<button
+				type='button'
+				className='flex items-center justify-center w-8 h-full flex-shrink-0 border-0 bg-transparent text-zyntheo-fg-3 hover:text-zyntheo-fg-1 hover:bg-zyntheo-bg-2'
+				onClick={() => chatThreadsService.openNewThread({ forceNew: true, switchTo: true })}
+				aria-label='New chat tab'
+				title='New tab'
+			>
+				<Plus size={14} />
+			</button>
 		</div>
 	)
 }

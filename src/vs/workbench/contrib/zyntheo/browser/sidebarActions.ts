@@ -174,8 +174,8 @@ registerAction2(class extends Action2 {
 		const oldSelns = oldThread?.state.stagingSelections
 		const oldVal = oldUI?.textAreaRef?.current?.value
 
-		// open and focus new thread
-		chatThreadsService.openNewThread()
+		// open and focus a fresh tab, like a browser "+"
+		chatThreadsService.openNewThread({ forceNew: true, switchTo: true })
 		await chatThreadsService.focusCurrentChat()
 
 
